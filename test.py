@@ -25,7 +25,7 @@ headers = {
 async def main():
     try:
         async with AsyncSession(
-            impersonate="chrome139",
+            impersonate="chrome120",
             timeout=30
         ) as session:
 
