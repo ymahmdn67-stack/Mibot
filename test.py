@@ -1,13 +1,12 @@
-import random, base64, re, asyncio, json
-from faker import Faker
+import re
+import asyncio
 from curl_cffi.requests import AsyncSession
 
 
 url = "https://greenmethods.com/my-account/"
 
 headers = {
-    "authority": "greenmethods.com",
-    "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+    "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
     "accept-language": "ar-IQ,ar;q=0.9,en-US;q=0.8,en;q=0.7",
     "cache-control": "max-age=0",
     "referer": "https://greenmethods.com/my-account/edit-address/billing/",
@@ -30,26 +29,28 @@ async def main():
             timeout=30
         ) as session:
 
-            response = await session.request(
-                method="GET",
-                url=url,
-                headers=headers,
-                cookies=cookies,
+            response = await session.get(
+                url,
+                headers=headers
             )
 
-            print(response.status_code)
-            print(response.text)
+            print("Status:", response.status_code)
+
+            nonce = re.search(
+                r'name="woocommerce-register-nonce" value="([^"]+)"',
+                response.text
+            )
+
+            if not nonce:
+                print("Nonce not found")
+                return
+
+            nonce = nonce.group(1)
+
+            print("Nonce:", nonce)
 
     except Exception as e:
-        print(f"Request failed: {e}")
+        print("Request failed:", e)
 
 
-nonce = re.search(
-    r'name="woocommerce-register-nonce" value="([^"]+)"',
-    response.text
-)
-
-if not nonce:
-    continue
-
-nonce = nonce.group(1)
+asyncio.run(main())
