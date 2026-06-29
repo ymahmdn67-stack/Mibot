@@ -20,7 +20,7 @@ async def main():
     
     # إنشاء جلسة واحدة تُستخدم لجميع الطلبات
     async with AsyncSession(
-        impersonate="chrome139",
+        impersonate="chrome120",
         timeout=30
     ) as session:
         
