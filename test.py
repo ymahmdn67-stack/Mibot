@@ -4,6 +4,21 @@ from faker import Faker
 from curl_cffi.requests import AsyncSession
 
 
+def find_between(text, start, end):
+    """دالة مساعدة لاستخراج نص بين نصين"""
+    try:
+        start_idx = text.find(start)
+        if start_idx == -1:
+            return None
+        start_idx += len(start)
+        end_idx = text.find(end, start_idx)
+        if end_idx == -1:
+            return None
+        return text[start_idx:end_idx]
+    except:
+        return None
+
+
 async def main():
     """
     استخدام جلسة واحدة لجميع الطلبات
@@ -33,7 +48,7 @@ async def main():
                 "accept-language": "ar-IQ,ar;q=0.9,en-US;q=0.8,en;q=0.7",
                 "cache-control": "max-age=0",
                 "referer": "https://greenmethods.com/my-account/edit-address/billing/",
-                "sec-ch-ua": '"Chromium";v="139", "Not;A=Brand";v="99"',
+                "sec-ch-ua": '"Chromium";v="120", "Not;A=Brand";v="99"',
                 "sec-ch-ua-mobile": "?1",
                 "sec-ch-ua-platform": '"Android"',
                 "sec-fetch-dest": "document",
@@ -41,7 +56,7 @@ async def main():
                 "sec-fetch-site": "same-origin",
                 "sec-fetch-user": "?1",
                 "upgrade-insecure-requests": "1",
-                "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36",
+                "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
             }
             
             response = await session.request(
@@ -75,7 +90,7 @@ async def main():
                 'sec-fetch-mode': 'navigate',
                 'sec-fetch-site': 'cross-site',
                 'upgrade-insecure-requests': '1',
-                'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
+                'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
                 'x-client-data': 'CMDjygE=',
             }
             
@@ -104,7 +119,7 @@ async def main():
             if c:
                 # ===== الطلب الثالث: الحصول على reCAPTCHA response =====
                 headers_reload = {
-                    "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36",
+                    "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
                     "Accept": "*/*",
                     "Accept-Language": "fa,en;q=0.9,en-GB;q=0.8,en-US;q=0.7",
                     "Connection": "keep-alive",
@@ -145,7 +160,7 @@ async def main():
                     "content-type": "application/x-www-form-urlencoded",
                     "origin": "https://greenmethods.com",
                     "referer": "https://greenmethods.com/my-account/",
-                    "sec-ch-ua": '"Chromium";v="139", "Not;A=Brand";v="99"',
+                    "sec-ch-ua": '"Chromium";v="120", "Not;A=Brand";v="99"',
                     "sec-ch-ua-mobile": "?1",
                     "sec-ch-ua-platform": '"Android"',
                     "sec-fetch-dest": "document",
@@ -153,7 +168,7 @@ async def main():
                     "sec-fetch-site": "same-origin",
                     "sec-fetch-user": "?1",
                     "upgrade-insecure-requests": "1",
-                    "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36",
+                    "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
                 }
                 
                 data_register = {
@@ -171,10 +186,46 @@ async def main():
                     data=data_register
                 )
                 
-                # طباعة النتيجة النهائية فقط
                 print(f"✓ تم التسجيل بنجاح")
                 print(f"البريد الإلكتروني: {e}")
                 print(f"كود الحالة: {response_register.status_code}")
+                
+                # ===== الطلب الخامس: الوصول إلى صفحة تعديل العنوان =====
+                headers_edit_address = {
+                    "authority": "greenmethods.com",
+                    "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                    "accept-language": "ar-IQ,ar;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "referer": "https://greenmethods.com/my-account/edit-address/",
+                    "sec-ch-ua": '"Chromium";v="120", "Not;A=Brand";v="99"',
+                    "sec-ch-ua-mobile": "?1",
+                    "sec-ch-ua-platform": '"Android"',
+                    "sec-fetch-dest": "document",
+                    "sec-fetch-mode": "navigate",
+                    "sec-fetch-site": "same-origin",
+                    "sec-fetch-user": "?1",
+                    "upgrade-insecure-requests": "1",
+                    "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+                }
+                
+                response_edit_address = await session.get(
+                    "https://greenmethods.com/my-account/edit-address/billing/",
+                    headers=headers_edit_address,
+                )
+                
+                # استخراج _nonce من صفحة تعديل العنوان
+                _nonce = find_between(
+                    response_edit_address.text,
+                    'name="woocommerce-edit-address-nonce" value="',
+                    '"'
+                )
+                
+                if not _nonce:
+                    print("✗ خطأ: لم يتم العثور على woocommerce-edit-address-nonce")
+                    return
+                
+                print(f"✓ تم الوصول إلى صفحة تعديل العنوان")
+                print(f"كود الحالة: {response_edit_address.status_code}")
+                print(f"✓ تم استخراج _nonce: {_nonce[:20]}...")
             else:
                 print("✗ خطأ: لم يتم الحصول على cap أو nonce")
                 
