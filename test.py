@@ -1,15 +1,7 @@
 import re
 import asyncio
-import json
 from faker import Faker
 from curl_cffi.requests import AsyncSession
-
-fake = Faker("en_UK")
-
-f = fake.first_name()
-l = fake.last_name()
-k = f"{f} {l}"
-e = f"{f.lower()}.{l.lower()}@gmail.com"
 
 
 async def main():
@@ -17,6 +9,13 @@ async def main():
     استخدام جلسة واحدة لجميع الطلبات
     الكوكيز تُدار تلقائياً بين الطلبات
     """
+    
+    # إنشاء بيانات المستخدم الوهمية داخل الدالة
+    fake = Faker("en_UK")
+    f = fake.first_name()
+    l = fake.last_name()
+    k = f"{f} {l}"
+    e = f"{f.lower()}.{l.lower()}@gmail.com"
     
     # إنشاء جلسة واحدة تُستخدم لجميع الطلبات
     async with AsyncSession(
@@ -49,7 +48,6 @@ async def main():
                 method="GET",
                 url=url,
                 headers=headers,
-                # لا حاجة لتمرير cookies - الجلسة تديرها تلقائياً
             )
             
             # استخراج nonce من الاستجابة
@@ -174,13 +172,14 @@ async def main():
                 )
                 
                 # طباعة النتيجة النهائية فقط
-                print(f"تم التسجيل بنجاح - البريد: {e}")
+                print(f"✓ تم التسجيل بنجاح")
+                print(f"البريد الإلكتروني: {e}")
                 print(f"كود الحالة: {response_register.status_code}")
             else:
-                print("خطأ: لم يتم الحصول على cap أو nonce")
+                print("✗ خطأ: لم يتم الحصول على cap أو nonce")
                 
         except Exception as e:
-            print(f"خطأ في الطلب: {e}")
+            print(f"✗ خطأ في الطلب: {e}")
 
 
 if __name__ == "__main__":
