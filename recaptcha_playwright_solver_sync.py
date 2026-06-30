@@ -1,11 +1,31 @@
 """
 حل reCAPTCHA v2 Invisible باستخدام Playwright (نسخة متزامنة)
 يقوم باعتراض طلبات الشبكة واستخراج التوكن تلقائياً
+يعمل في بيئة Codespaces وLinux بوضع headless
 """
 
 import re
 import time
+import subprocess
+import sys
 from playwright.sync_api import sync_playwright
+
+
+def install_browser():
+    """تثبيت متصفح Chromium تلقائياً إذا لم يكن موجوداً"""
+    print("[*] جاري التحقق من وجود المتصفح وتثبيته إن لزم...")
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            print("[✓] المتصفح جاهز للاستخدام")
+        else:
+            print(f"[!] تحذير أثناء التثبيت: {result.stderr[:200]}")
+    except Exception as e:
+        print(f"[!] خطأ في تثبيت المتصفح: {e}")
 
 
 class RecaptchaSolver:
@@ -60,8 +80,16 @@ class RecaptchaSolver:
             التوكن المستخرج أو None
         """
         with sync_playwright() as p:
-            # تشغيل المتصفح
-            browser = p.chromium.launch(headless=False)
+            # تشغيل المتصفح بوضع headless للعمل في Codespaces/Linux
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                ]
+            )
             
             # إنشاء صفحة جديدة
             page = browser.new_page()
@@ -115,6 +143,9 @@ class RecaptchaSolver:
 
 def main():
     """الدالة الرئيسية"""
+    # تثبيت المتصفح تلقائياً عند الحاجة
+    install_browser()
+
     solver = RecaptchaSolver()
     
     # الموقع المستهدف
