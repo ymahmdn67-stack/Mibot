@@ -1,6 +1,11 @@
 import threading
 import time
 import re
+import subprocess, sys
+
+subprocess.run([sys.executable, "-m", "pip", "install", "playwright"], capture_output=True)
+subprocess.run([sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"], capture_output=True)
+
 from playwright.sync_api import sync_playwright
 
 TOKEN = None
