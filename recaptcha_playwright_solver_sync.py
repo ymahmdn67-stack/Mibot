@@ -12,18 +12,33 @@ from playwright.sync_api import sync_playwright
 
 
 def install_browser():
-    """تثبيت متصفح Chromium تلقائياً إذا لم يكن موجوداً"""
-    print("[*] جاري التحقق من وجود المتصفح وتثبيته إن لزم...")
+    """تثبيت مكتبات النظام المطلوبة ومتصفح Chromium تلقائياً"""
+    print("[*] جاري تثبيت مكتبات النظام المطلوبة...")
     try:
+        # تثبيت مكتبات النظام المطلوبة لـ Chromium في بيئة Codespaces/Linux
+        subprocess.run(
+            ["sudo", "apt-get", "install", "-y",
+             "libatk1.0-0", "libatk-bridge2.0-0", "libcups2",
+             "libdrm2", "libxkbcommon0", "libxcomposite1",
+             "libxdamage1", "libxfixes3", "libxrandr2",
+             "libgbm1", "libasound2"],
+            capture_output=True, text=True
+        )
+        print("[✓] مكتبات النظام جاهزة")
+    except Exception as e:
+        print(f"[!] تحذير مكتبات النظام: {e}")
+
+    print("[*] جاري تثبيت المتصفح مع تبعياته...")
+    try:
+        # تثبيت Chromium مع جميع تبعياته تلقائياً
         result = subprocess.run(
-            [sys.executable, "-m", "playwright", "install", "chromium"],
-            capture_output=True,
-            text=True
+            [sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"],
+            capture_output=True, text=True
         )
         if result.returncode == 0:
             print("[✓] المتصفح جاهز للاستخدام")
         else:
-            print(f"[!] تحذير أثناء التثبيت: {result.stderr[:200]}")
+            print(f"[!] تحذير أثناء التثبيت: {result.stderr[:300]}")
     except Exception as e:
         print(f"[!] خطأ في تثبيت المتصفح: {e}")
 
