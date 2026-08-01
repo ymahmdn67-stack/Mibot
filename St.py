@@ -6,7 +6,7 @@ import asyncio
 from faker import Faker
 from curl_cffi.requests import AsyncSession
 
-fake = Faker("en_UK")
+fake = Faker("en_US")
 
 class tools:
     @staticmethod
