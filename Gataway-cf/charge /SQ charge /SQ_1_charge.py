@@ -89,7 +89,7 @@ class Gateway:
         ua = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36"
         sess = str(uuid.uuid4())
 
-        async with AsyncSession(impersonate="chrome139", proxies=proxies) as session:
+        async with AsyncSession(impersonate="chrome110", proxies=proxies) as session:
             try:
                 # Step 1: GET donation page with iframe param
                 headers_get = {

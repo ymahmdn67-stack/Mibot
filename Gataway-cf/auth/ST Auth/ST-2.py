@@ -72,7 +72,7 @@ class Gateway:
         tok = secrets.token_hex(16)
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        async with AsyncSession(impersonate="chrome139", proxies=proxies) as session:
+        async with AsyncSession(impersonate="chrome110", proxies=proxies) as session:
             try:
                 # 1. GET my-account page to get registration nonce
                 headers_main = {

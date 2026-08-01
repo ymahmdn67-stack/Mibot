@@ -67,7 +67,7 @@ RESPONSE_MAP = {
 class Gateway:
     @staticmethod
     async def charge_card(card_data: dict, user_data: dict, proxies: dict = None) -> tuple[str, str, bool]:
-        async with AsyncSession(impersonate="chrome139", proxies=proxies) as session:
+        async with AsyncSession(impersonate="chrome110", proxies=proxies) as session:
             try:
                 # 1. GET my-account page to get registration nonce
                 headers_main = {

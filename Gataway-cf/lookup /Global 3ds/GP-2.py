@@ -69,7 +69,7 @@ class Gateway:
         ref = str(uuid.uuid4())
         ua = fake.user_agent()
 
-        async with AsyncSession(impersonate="chrome139", proxies=proxies) as session:
+        async with AsyncSession(impersonate="chrome110", proxies=proxies) as session:
             try:
                 # Step 1: Add product to cart
                 headers_add = {

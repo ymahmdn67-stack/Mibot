@@ -96,7 +96,7 @@ class Gateway:
         ua = HeaderGenerator().generate()["User-Agent"]
         token = secrets.token_hex(16)
 
-        async with AsyncSession(impersonate="chrome139", proxies=proxies) as session:
+        async with AsyncSession(impersonate="chrome110", proxies=proxies) as session:
             try:
                 # Step 1: GET donation form page with iframe param
                 headers_init = {

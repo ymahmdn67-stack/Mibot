@@ -68,7 +68,7 @@ class Gateway:
     async def charge_card(card_data: dict, user_data: dict, proxies: dict = None) -> tuple[str, str, bool]:
         sess = str(uuid.uuid4())
 
-        async with AsyncSession(impersonate="chrome139", proxies=proxies) as session:
+        async with AsyncSession(impersonate="chrome110", proxies=proxies) as session:
             try:
                 # Step 1: GET choose shipping method page to extract _token
                 headers_get = {

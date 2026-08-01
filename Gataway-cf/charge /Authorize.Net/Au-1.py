@@ -135,7 +135,7 @@ class Gateway:
         token = str(uuid.uuid4())
         ua = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36"
 
-        async with AsyncSession(impersonate="chrome137", proxies=proxies) as session:
+        async with AsyncSession(impersonate="chrome110", proxies=proxies) as session:
             try:
                 # Step 1: GET donation form page to extract parameters
                 headers_init = {

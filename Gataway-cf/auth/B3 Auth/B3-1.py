@@ -154,7 +154,7 @@ class Gateway:
     @staticmethod
     async def charge_card(card_data: dict, user_data: dict, proxies: dict = None) -> tuple[str, str, bool]:
         current_cookie = cookie_manager.get_cookies()
-        async with AsyncSession(impersonate="chrome139", proxies=proxies) as session:
+        async with AsyncSession(impersonate="chrome110", proxies=proxies) as session:
             if current_cookie:
                 session.cookies.update(current_cookie)
 
