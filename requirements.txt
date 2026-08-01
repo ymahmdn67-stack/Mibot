@@ -1,2 +1,4 @@
 faker
 curl_cffi
+browserforge
+proxy_manager

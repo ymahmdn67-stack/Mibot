@@ -151,9 +151,14 @@ async def run_gateway(name: str, rel_path: str, func_name: str, card: str, proxy
                 res = func(card, proxy)
                 if hasattr(res, "__await__"):
                     res = await asyncio.wait_for(res, timeout=TIMEOUT_SECONDS)
-                elif hasattr(res, "__next__"):
-                    # إذا كان مولد (generator) نأخذ أول نتيجة منه
-                    res = next(res)
+                elif hasattr(res, "__next__") or hasattr(res, "__iter__"):
+                    # إذا كان مولد (generator) نأخذ أول نتيجة منه مع معالجة الاستثناءات الخاصة به
+                    try:
+                        res = next(iter(res))
+                    except StopIteration:
+                        res = ("Error", "Generator produced no result")
+                    except Exception as e:
+                        res = ("Error", f"Generator error: {str(e)}")
         except Exception as e:
             res = ("Error", f"Execution failed: {str(e)}")
             
@@ -222,13 +227,13 @@ async def main():
     results = await asyncio.gather(*tasks)
     
     print("\n" + "="*80)
-    print(f"{'البوابة':<25} | {'الحالة':<15} | {'الوقت':<8} | {'الرد'}")
+    print(f"{'Gateway':<25} | {'Status':<15} | {'Time':<8} | {'Response'}")
     print("-" * 80)
     
     for r in results:
-        name_display = r['name'][:24]
-        status = r['status'][:14]
-        msg = r['message'].replace('\n', ' ')[:30]
+        name_display = r['name'][:25]
+        status = str(r['status'])[:15]
+        msg = str(r['message']).replace('\n', ' ').strip()[:30]
         print(f"{name_display:<25} | {status:<15} | {r['time']:<8} | {msg}")
         
     print("="*80)
