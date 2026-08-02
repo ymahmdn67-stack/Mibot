@@ -88,7 +88,7 @@ class Gateway:
     async def charge_card(card_data: dict, user_data: dict, proxies: dict = None) -> tuple[str, str, bool]:
         sess = str(uuid.uuid4())
 
-        async with AsyncSession(impersonate="chrome120", proxies=proxies, timeout=15) as session:
+        async with AsyncSession(impersonate="chrome120", proxies=proxies, timeout=150) as session:
             try:
                 # Step 1: GET donation page with iframe param
                 headers_get = {
