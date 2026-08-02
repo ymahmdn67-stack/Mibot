@@ -343,10 +343,13 @@ async def process_SQ_1_charge(card_line: str, proxy_url: str = None) -> tuple[st
 async def main():
     # بطاقة اختبار قياسية لـ Stripe
     test_card = "4211566115568609|12|28|321"
-    proxy = None  # يمكنك وضع البروكسي هنا إذا لزم الأمر
+    
+    # البروكسي الخاص بك بالصيغة الصحيحة
+    proxy = "http://purevpn0s8732217:i67s60ep@Px121102.pointtoserver.com:10780"
 
     print("🚀 جاري اختبار البوابة (ST Charge)...")
     print(f"💳 البطاقة: {test_card}")
+    print(f"🌐 جاري الاتصال عبر: {proxy}")
     
     status, message, is_live = await process_SQ_1_charge(test_card, proxy_url=proxy)
     
