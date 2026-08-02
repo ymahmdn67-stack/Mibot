@@ -1,5 +1,6 @@
 import re
 import json
+import asyncio
 import hashlib
 import uuid
 from faker import Faker
