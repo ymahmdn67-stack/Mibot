@@ -19,8 +19,10 @@ class tools:
         cvv = parts[3].strip() if len(parts) > 3 else ""
         
         mm = mm.zfill(2)
-        if len(yy) == 4:
-            yy = yy[-2:]
+        if len(yy) == 2:
+            yy = f"20{yy}"
+        elif len(yy) == 4:
+            yy = yy
             
         return {"cc": cc, "mm": mm, "yy": yy, "cvv": cvv}
 
