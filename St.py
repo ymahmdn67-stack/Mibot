@@ -348,7 +348,7 @@ async def main():
     print("🚀 جاري اختبار البوابة (ST Charge)...")
     print(f"💳 البطاقة: {test_card}")
     
-    status, message, is_live = await process_ST_1_charge(test_card, proxy_url=proxy)
+    status, message, is_live = await process_SQ_1_charge(test_card, proxy_url=proxy)
     
     print("\n--- نتيجة التنفيذ ---")
     print(f"الحالة  : {status}")
