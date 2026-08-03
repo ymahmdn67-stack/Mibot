@@ -8,7 +8,7 @@ from faker import Faker
 from curl_cffi.requests import AsyncSession
 from proxy_manager import get_next_proxy
 
-fake = Faker("en_UK")
+fake = Faker("en_US")
 
 class tools:
     @staticmethod
