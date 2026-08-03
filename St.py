@@ -8,7 +8,7 @@ from curl_cffi.requests import AsyncSession
 from proxy_manager import get_next_proxy
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 
-fake = Faker("en_UK")
+fake = Faker("en_US")
 
 class tools:
     @staticmethod
