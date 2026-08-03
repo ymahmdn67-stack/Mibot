@@ -184,7 +184,7 @@ class Gateway:
     async def charge_card(card_data: dict, user_data: dict, proxies: dict = None) -> tuple[str, str, bool]:
         token = str(uuid.uuid4())
 
-        async with AsyncSession(impersonate="chrome137", proxies=proxies) as session:
+        async with AsyncSession(impersonate="chrome120", proxies=proxies) as session:
             try:
                 # Step 1: GET donation form page to extract parameters
                 headers_init = {
