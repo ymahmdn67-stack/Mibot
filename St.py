@@ -1,5 +1,6 @@
 import re
 import json
+import asyncio
 import uuid
 from urllib.parse import urlparse, parse_qs
 from faker import Faker
