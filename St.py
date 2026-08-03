@@ -97,7 +97,16 @@ class Gateway:
                     'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36',
                 }
                 resp_init = await session.get('https://bukjeh.org/donations/donation-2023-2-3/', headers=headers_init)
-                html = resp_init.text
+html = resp_init.text
+
+# --- إضافة هذا الجزء لتجاوز صفحة الانتظار ---
+if 'window.location.reload()' in html:
+    print("    [!] تم اكتشاف صفحة انتظار حماية، جاري الانتظار 5 ثوانٍ وإعادة المحاولة...")
+    await asyncio.sleep(6)
+    resp_init = await session.get('https://bukjeh.org/donations/donation-2023-2-3/', headers=headers_init)
+    html = resp_init.text
+# -------------------------------------------
+
                 
                 try:
                     hash_val = re.search(r'name="give-form-hash" value="(.*?)"', html).group(1)
