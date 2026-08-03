@@ -350,8 +350,9 @@ async def process_paypal_1(card_line: str, proxy_url: str = None) -> tuple[str, 
     return "Error", "Max attempts exceeded unexpectedly", False
     
 async def main():
-    test_card = "4211566115568609|12|28|321"
-    proxy = "http://purevpn0s8732217:i67s60ep@Px121102.pointtoserver.com:10780"
+    test_card = "4211566115568600|12|28|321"
+    proxy = "http://purevpn0s2232045:hww8fqbr72j0@px016104.pointtoserver.com:10780"
+
 
     print("🚀 Testing gateway (ST Charge)...")
     print(f"💳 Card: {test_card}")
